@@ -7,6 +7,9 @@ from dema.sections.catalog import SectionCatalog
 from dema.sections.source import SectionSource
 from dema.sections.synthetic import SyntheticSectionSource
 from dema.sections.tse import TseSectionSource
+from dema.simulation.diagnostics import Checkpoint, counting_timeline
+from dema.simulation.generator import BallotGenerator
+from dema.simulation.presets import DEMA_2026_FIRST_ROUND
 
 Handler = Callable[[argparse.Namespace], None]
 
@@ -38,6 +41,14 @@ def _build_parser() -> argparse.ArgumentParser:
     summary = actions.add_parser("summary", help="describe a stored catalog")
     summary.add_argument("catalog", type=Path)
     summary.set_defaults(handler=_summarize)
+
+    ballots = commands.add_parser("ballots", help="simulate ballot reports")
+    ballot_actions = ballots.add_subparsers(required=True)
+    simulate = ballot_actions.add_parser("simulate", help="generate ballot reports")
+    simulate.add_argument("catalog", type=Path)
+    simulate.add_argument("output", type=Path)
+    simulate.add_argument("--seed", type=int, default=2026)
+    simulate.set_defaults(handler=_simulate)
     return parser
 
 
@@ -51,6 +62,25 @@ def _synthesize(args: argparse.Namespace) -> None:
 
 def _summarize(args: argparse.Namespace) -> None:
     _print_summary(SectionCatalog.from_parquet(args.catalog))
+
+
+def _simulate(args: argparse.Namespace) -> None:
+    catalog = SectionCatalog.from_parquet(args.catalog)
+    ballots = BallotGenerator(DEMA_2026_FIRST_ROUND, seed=args.seed).generate(catalog)
+    ballots.to_parquet(args.output)
+    print(f"ballots: {len(ballots):,}")
+    for checkpoint in counting_timeline(ballots):
+        print(_format_checkpoint(checkpoint))
+
+
+def _format_checkpoint(checkpoint: Checkpoint) -> str:
+    election = DEMA_2026_FIRST_ROUND.election
+    ranking = sorted(checkpoint.shares.items(), key=lambda item: item[1], reverse=True)
+    leaders = "  ".join(
+        f"{election.candidate(number).name} {share:.2%}"
+        for number, share in ranking[:2]
+    )
+    return f"  {checkpoint.progress:6.1%}  {leaders}"
 
 
 def _persist(source: SectionSource, output: Path) -> None:

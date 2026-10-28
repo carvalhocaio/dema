@@ -1,3 +1,8 @@
+# Auto-export library paths for NixOS/nix-ld if present
+ifneq ($(NIX_LD_LIBRARY_PATH),)
+export LD_LIBRARY_PATH := $(NIX_LD_LIBRARY_PATH)$(if $(LD_LIBRARY_PATH),:$(LD_LIBRARY_PATH))
+endif
+
 .PHONY: help sync install hooks hooks-run test lint lint-fix format format-check typecheck audit ci check clean
 
 help: ## Lists all available Makefile commands
