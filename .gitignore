@@ -26,6 +26,9 @@ htmlcov/
 # Database
 *.sqlite3
 
+# Data (downloaded from TSE, see README)
+data/*
+
 # IDE / Editor files
 .idea/
 .vscode/

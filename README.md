@@ -79,6 +79,16 @@ interpreter instead of downloading a managed CPython.
 
 ---
 
+## Data
+
+Raw data is not tracked by git (see `.gitignore`). Download it from the TSE CDN with:
+
+```fish
+mkdir -p data/raw; and curl -L -o data/raw/eleitorado_local_votacao_2026.zip https://cdn.tse.jus.br/estatistica/sead/odsele/eleitorado_locais_votacao/eleitorado_local_votacao_2026.zip; and unzip -o data/raw/eleitorado_local_votacao_2026.zip -d data/raw
+```
+
+---
+
 ## Project Structure
 
 ```text
