@@ -35,6 +35,15 @@
           UV_PYTHON_PREFERENCE = "only-system";
 
           shellHook = ''
+            # Wheels manylinux baixados pelo uv (numpy, pandas, ...) linkam
+            # libstdc++/libgcc_s como numa distro FHS; sem expor essas libs,
+            # `import numpy` falha com "libstdc++.so.6: cannot open shared object file".
+            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [
+              pkgs.stdenv.cc.cc # libstdc++.so.6
+              pkgs.libgcc # libgcc_s.so.1
+              pkgs.zlib # libz.so.1
+            ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
             echo "dema dev shell — python $(${pkgs.python312}/bin/python3 --version 2>&1 | cut -d' ' -f2), uv ${pkgs.uv.version}"
             echo "run: make ci"
           '';
