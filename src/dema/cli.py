@@ -2,6 +2,9 @@ import argparse
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+import psycopg
+
+from dema.config import get_settings
 from dema.domain.election import ElectionRound
 from dema.sections.catalog import SectionCatalog
 from dema.sections.source import SectionSource
@@ -11,6 +14,7 @@ from dema.simulation.ballots import SimulatedBallots
 from dema.simulation.diagnostics import Checkpoint, counting_timeline
 from dema.simulation.generator import BallotGenerator
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
+from dema.storage.migrator import Migrator
 from dema.tallying.memory import InMemoryTallyStore
 from dema.tallying.outcome import Outcome, Verdict
 from dema.tallying.replay import Frame, replay
@@ -58,6 +62,11 @@ def _build_parser() -> argparse.ArgumentParser:
     tally.add_argument("ballots", type=Path)
     tally.add_argument("--steps", type=int, default=10)
     tally.set_defaults(handler=_tally)
+
+    database = commands.add_parser("db", help="manage the database")
+    database_actions = database.add_subparsers(required=True)
+    migrate = database_actions.add_parser("migrate", help="apply pending migrations")
+    migrate.set_defaults(handler=_migrate)
     return parser
 
 
@@ -99,6 +108,15 @@ def _tally(args: argparse.Namespace) -> None:
         if frame.tally.progress >= next_step / args.steps:
             next_step += 1
             print(f"  {frame.tally.progress:6.1%}  {_format_leaders(frame.outcome)}")
+
+
+def _migrate(_: argparse.Namespace) -> None:
+    with psycopg.connect(str(get_settings().database_url)) as connection:
+        applied = Migrator(connection).migrate()
+    for version in applied:
+        print(f"applied {version}")
+    if not applied:
+        print("database is up to date")
 
 
 def _format_verdict(frame: Frame) -> str:
