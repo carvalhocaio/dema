@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 
 PRESIDENTIAL_NUMBER_RANGE = range(10, 100)
 
@@ -8,6 +9,7 @@ class Candidate:
     number: int
     name: str
     party: str
+    birth_date: date
 
     def __post_init__(self) -> None:
         if self.number not in PRESIDENTIAL_NUMBER_RANGE:

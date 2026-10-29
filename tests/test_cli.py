@@ -33,3 +33,19 @@ def test_simulates_ballots_from_catalog(
     assert ballots.exists()
     assert "ballots: 2,000" in output
     assert "100.0%" in output
+
+
+def test_tallies_simulated_ballots(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    catalog = tmp_path / "sections.parquet"
+    ballots = tmp_path / "ballots.parquet"
+    main(["sections", "synth", "2000", str(catalog)])
+    main(["ballots", "simulate", str(catalog), str(ballots)])
+    capsys.readouterr()
+
+    main(["ballots", "tally", str(ballots), "--steps", "4"])
+    lines = capsys.readouterr().out.splitlines()
+
+    assert any(line.lstrip().startswith(">> runoff at") for line in lines)
+    assert len([line for line in lines if ">>" not in line]) == 4

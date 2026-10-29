@@ -1,12 +1,11 @@
 import pytest
 
-from dema.domain.candidate import Candidate
 from dema.domain.election import ElectionRound
-from tests.factories import KEONS, LISDEN, NICO, make_election
+from tests.factories import KEONS, LISDEN, NICO, make_candidate, make_election
 
 
 def test_rejects_duplicated_numbers() -> None:
-    impostor = Candidate(number=NICO.number, name="Vetomo", party="Dema Order")
+    impostor = make_candidate(number=NICO.number, name="Vetomo")
     with pytest.raises(ValueError, match="unique"):
         make_election(candidates=(NICO, impostor))
 

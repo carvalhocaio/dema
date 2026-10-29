@@ -7,9 +7,13 @@ from dema.sections.catalog import SectionCatalog
 from dema.sections.source import SectionSource
 from dema.sections.synthetic import SyntheticSectionSource
 from dema.sections.tse import TseSectionSource
+from dema.simulation.ballots import SimulatedBallots
 from dema.simulation.diagnostics import Checkpoint, counting_timeline
 from dema.simulation.generator import BallotGenerator
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
+from dema.tallying.memory import InMemoryTallyStore
+from dema.tallying.outcome import Outcome, Verdict
+from dema.tallying.replay import Frame, replay
 
 Handler = Callable[[argparse.Namespace], None]
 
@@ -49,6 +53,11 @@ def _build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("output", type=Path)
     simulate.add_argument("--seed", type=int, default=2026)
     simulate.set_defaults(handler=_simulate)
+
+    tally = ballot_actions.add_parser("tally", help="replay ballots into a tally")
+    tally.add_argument("ballots", type=Path)
+    tally.add_argument("--steps", type=int, default=10)
+    tally.set_defaults(handler=_tally)
     return parser
 
 
@@ -71,6 +80,36 @@ def _simulate(args: argparse.Namespace) -> None:
     print(f"ballots: {len(ballots):,}")
     for checkpoint in counting_timeline(ballots):
         print(_format_checkpoint(checkpoint))
+
+
+def _tally(args: argparse.Namespace) -> None:
+    ballots = SimulatedBallots.from_parquet(args.ballots)
+    election = DEMA_2026_FIRST_ROUND.election
+    store = InMemoryTallyStore(
+        election,
+        total_sections=len(ballots),
+        total_electorate=int(ballots.frame["eligible_voters"].sum()),
+    )
+    next_step = 1
+    verdict = Verdict.UNDECIDED
+    for frame in replay(ballots.in_release_order(), store, election):
+        if frame.outcome.verdict is not verdict:
+            verdict = frame.outcome.verdict
+            print(f"  >> {_format_verdict(frame)}")
+        if frame.tally.progress >= next_step / args.steps:
+            next_step += 1
+            print(f"  {frame.tally.progress:6.1%}  {_format_leaders(frame.outcome)}")
+
+
+def _format_verdict(frame: Frame) -> str:
+    names = " x ".join(candidate.name for candidate in frame.outcome.finalists)
+    return f"{frame.outcome.verdict} at {frame.tally.progress:.2%}: {names}"
+
+
+def _format_leaders(outcome: Outcome) -> str:
+    return "  ".join(
+        f"{result.candidate.name} {result.share:.2%}" for result in outcome.ranking[:2]
+    )
 
 
 def _format_checkpoint(checkpoint: Checkpoint) -> str:

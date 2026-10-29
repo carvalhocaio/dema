@@ -1,15 +1,25 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from dema.domain.candidate import Candidate
 from dema.domain.election import Election, ElectionRound
 from dema.domain.state import Region
 from dema.simulation.scenario import RegionalProfile, Scenario
 
-KEONS = Candidate(number=27, name="Keons", party="Torchbearers")
-NICO = Candidate(number=99, name="Nico", party="Dema Order")
-LISDEN = Candidate(number=31, name="Lisden", party="Paladin Union")
-ANDRE = Candidate(number=44, name="Andre", party="Glorious Gone")
-VETOMO = Candidate(number=12, name="Vetomo", party="Vulture Front")
+KEONS = Candidate(
+    number=27, name="Keons", party="Torchbearers", birth_date=date(1968, 10, 5)
+)
+NICO = Candidate(
+    number=99, name="Nico", party="Dema Order", birth_date=date(1961, 5, 24)
+)
+LISDEN = Candidate(
+    number=31, name="Lisden", party="Paladin Union", birth_date=date(1975, 5, 17)
+)
+ANDRE = Candidate(
+    number=44, name="Andre", party="Glorious Gone", birth_date=date(1972, 1, 8)
+)
+VETOMO = Candidate(
+    number=12, name="Vetomo", party="Vulture Front", birth_date=date(1979, 5, 21)
+)
 
 FIRST_ROUND_POLLS_CLOSE = datetime(2026, 10, 4, 20, 0, tzinfo=UTC)
 

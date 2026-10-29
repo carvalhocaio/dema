@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from dema.domain.ballot import Ballot
 from dema.domain.candidate import Candidate
@@ -6,9 +6,23 @@ from dema.domain.election import Election, ElectionRound
 from dema.domain.section import SectionKey
 from dema.domain.state import State
 
-NICO = Candidate(number=99, name="Nico", party="Dema Order")
-KEONS = Candidate(number=27, name="Keons", party="Torchbearers")
-LISDEN = Candidate(number=31, name="Lisden", party="Paladin Union")
+NICO = Candidate(
+    number=99, name="Nico", party="Dema Order", birth_date=date(1961, 5, 24)
+)
+KEONS = Candidate(
+    number=27, name="Keons", party="Torchbearers", birth_date=date(1968, 10, 5)
+)
+LISDEN = Candidate(
+    number=31, name="Lisden", party="Paladin Union", birth_date=date(1975, 5, 17)
+)
+
+
+def make_candidate(
+    number: int = 10, name: str = "Andre", birth_date: date = date(1972, 1, 8)
+) -> Candidate:
+    return Candidate(
+        number=number, name=name, party="Glorious Gone", birth_date=birth_date
+    )
 
 
 def make_election(
@@ -27,9 +41,10 @@ def make_ballot(
     blank_votes: int = 5,
     null_votes: int = 10,
     eligible_voters: int = 400,
+    section_number: int = 1,
 ) -> Ballot:
     return Ballot(
-        section=make_section_key(),
+        section=make_section_key(number=section_number),
         eligible_voters=eligible_voters,
         nominal_votes=nominal_votes or {NICO.number: 150, KEONS.number: 120},
         blank_votes=blank_votes,
