@@ -4,10 +4,7 @@ from dema.domain.ballot import Ballot
 from dema.domain.election import Election
 from dema.domain.section import SectionKey
 from dema.tallying.tally import Tally
-
-
-class UnknownCandidateError(ValueError):
-    pass
+from dema.tallying.validation import ensure_known_candidates
 
 
 class InMemoryTallyStore:
@@ -26,9 +23,7 @@ class InMemoryTallyStore:
         self._electorate = 0
 
     def add(self, ballot: Ballot) -> bool:
-        unknown = ballot.nominal_votes.keys() - self._election.candidate_numbers
-        if unknown:
-            raise UnknownCandidateError(f"unknown candidates: {sorted(unknown)}")
+        ensure_known_candidates(self._election, ballot)
         if ballot.section in self._counted:
             return False
         self._counted.add(ballot.section)

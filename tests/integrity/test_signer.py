@@ -5,8 +5,7 @@ import pytest
 from dema.integrity.codec import decode_ballot, encode_ballot
 from dema.integrity.signer import BallotSigner, InvalidSignatureError
 from tests.factories import make_ballot
-
-KEY = b"clancy-is-watching-from-the-trench"
+from tests.helpers import SIGNING_KEY as KEY
 
 
 def test_codec_round_trips_ballot() -> None:
@@ -25,7 +24,10 @@ def test_verifies_signed_ballot() -> None:
     signer = BallotSigner(KEY)
     ballot = make_ballot()
 
-    assert signer.verify(signer.sign(ballot)) == ballot
+    signed = signer.sign(ballot)
+
+    assert signer.verify(signed).ballot == ballot
+    assert signer.verify(signed).signed == signed
 
 
 def test_detects_tampered_payload() -> None:

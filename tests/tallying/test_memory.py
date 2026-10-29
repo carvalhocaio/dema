@@ -1,6 +1,7 @@
 import pytest
 
-from dema.tallying.memory import InMemoryTallyStore, UnknownCandidateError
+from dema.tallying.memory import InMemoryTallyStore
+from dema.tallying.validation import UnknownCandidateError
 from tests.factories import KEONS, LISDEN, NICO, make_ballot, make_election
 
 

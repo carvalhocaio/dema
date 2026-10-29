@@ -10,6 +10,8 @@ def isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DEMA_DATABASE_URL", raising=False)
     monkeypatch.delenv("DEMA_REDIS_URL", raising=False)
+    monkeypatch.delenv("DEMA_SIGNING_KEY", raising=False)
+    monkeypatch.delenv("DEMA_SPEED_FACTOR", raising=False)
 
 
 def test_defaults_point_to_local_compose() -> None:
@@ -35,4 +37,17 @@ def test_rejects_invalid_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DEMA_DATABASE_URL", "mysql://dema@localhost/dema")
 
     with pytest.raises(ValueError, match="database_url"):
+        Settings()
+
+
+def test_treats_empty_signing_key_as_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEMA_SIGNING_KEY", "")
+
+    assert Settings().signing_key is None
+
+
+def test_rejects_non_positive_speed_factor(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEMA_SPEED_FACTOR", "0")
+
+    with pytest.raises(ValueError, match="speed_factor"):
         Settings()

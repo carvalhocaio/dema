@@ -18,6 +18,12 @@ class SignedBallot:
     signature: str
 
 
+@dataclass(frozen=True, slots=True)
+class VerifiedBallot:
+    ballot: Ballot
+    signed: SignedBallot
+
+
 class BallotSigner:
     def __init__(self, key: bytes) -> None:
         if len(key) < MIN_KEY_BYTES:
@@ -28,10 +34,10 @@ class BallotSigner:
         payload = encode_ballot(ballot)
         return SignedBallot(payload=payload, signature=self._digest(payload))
 
-    def verify(self, signed: SignedBallot) -> Ballot:
+    def verify(self, signed: SignedBallot) -> VerifiedBallot:
         if not hmac.compare_digest(self._digest(signed.payload), signed.signature):
             raise InvalidSignatureError("ballot signature does not match its payload")
-        return decode_ballot(signed.payload)
+        return VerifiedBallot(ballot=decode_ballot(signed.payload), signed=signed)
 
     def _digest(self, payload: bytes) -> str:
         return hmac.new(self._key, payload, hashlib.sha3_256).hexdigest()
