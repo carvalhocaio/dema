@@ -10,7 +10,6 @@ A minimalist, modern Python project template preconfigured with:
 - **[pip-audit](https://github.com/pypa/pip-audit)** for dependency vulnerability scanning
 - **Idiomatic Makefile** for development workflow automation
 - **GitHub Actions CI** matching local checks
-- **[Nix flake](flake.nix)** with a pinned dev shell (`python312`, `uv`, `make`, `node`, `git`)
 
 ---
 
@@ -39,22 +38,6 @@ make rename NAME=my-new-project
 make sync
 make hooks
 ```
-
-### 4. (Optional) Enter the Nix dev shell
-
-If you have [Nix](https://nixos.org/download/) with flakes enabled, the toolchain
-comes from the pinned `flake.lock` instead of your system:
-
-```bash
-nix develop          # python 3.12 + uv + make + node + git
-make ci              # same pipeline, now fully reproducible
-nix develop -c make ci   # one-shot equivalent, no shell entry needed
-nix fmt              # format the .nix files (alejandra)
-```
-
-`nix flake check` validates the flake outputs. `uv` is told
-`UV_PYTHON_PREFERENCE=only-system` inside the shell, so it reuses the Nix-provided
-interpreter instead of downloading a managed CPython.
 
 ---
 
@@ -106,7 +89,5 @@ mkdir -p data/raw; and curl -L -o data/raw/eleitorado_local_votacao_2026.zip htt
 ├── .python-version
 ├── Makefile
 ├── pyproject.toml
-├── README.md
-├── flake.nix                 # Nix flake: pinned dev shell (nix develop)
-└── flake.lock                # Pinned nixpkgs revision for the flake
+└── README.md
 ```
