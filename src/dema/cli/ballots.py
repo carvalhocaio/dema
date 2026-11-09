@@ -4,6 +4,7 @@ from pathlib import Path
 
 from dema.cli.common import Subparsers, format_leaders
 from dema.config import get_settings
+from dema.domain.election import Election, ElectionRound
 from dema.sections.catalog import SectionCatalog
 from dema.simulation.ballots import SimulatedBallots
 from dema.simulation.diagnostics import Checkpoint, counting_timeline
@@ -15,7 +16,13 @@ from dema.streaming.stream import BallotStream
 from dema.tallying.memory import InMemoryTallyStore
 from dema.tallying.outcome import Verdict
 from dema.tallying.replay import replay
-from dema.wiring import ACTIVE_KEYS, ACTIVE_SCENARIO, build_signer, open_redis
+from dema.wiring import (
+    REFERENCE_SCENARIO,
+    build_signer,
+    load_active_election,
+    open_database,
+    open_redis,
+)
 
 SAMPLED = "sampled"
 REFERENCE = "reference"
@@ -40,6 +47,7 @@ def register(commands: Subparsers) -> None:
     tally = actions.add_parser("tally", help="replay ballots into a tally")
     tally.add_argument("ballots", type=Path)
     tally.add_argument("--steps", type=int, default=10)
+    tally.add_argument("--round", type=int, choices=[1, 2], default=1)
     tally.set_defaults(handler=_tally)
 
     publish = actions.add_parser("publish", help="stream signed ballots to Redis")
@@ -60,17 +68,17 @@ def _simulate(args: argparse.Namespace) -> None:
 
 def _scenario(kind: str, seed: int) -> Scenario:
     if kind == REFERENCE:
-        return ACTIVE_SCENARIO
-    draw = ScenarioSampler(ACTIVE_SCENARIO).draw(seed)
+        return REFERENCE_SCENARIO
+    draw = ScenarioSampler(REFERENCE_SCENARIO).draw(seed)
     print(f"national strength (seed {seed}):")
-    for candidate in ACTIVE_SCENARIO.election.candidates:
+    for candidate in REFERENCE_SCENARIO.election.candidates:
         print(f"  {candidate.name:<10}{draw.national[candidate.number]:>8.2%}")
     return draw.scenario
 
 
 def _tally(args: argparse.Namespace) -> None:
     ballots = SimulatedBallots.from_parquet(args.ballots)
-    election = ACTIVE_SCENARIO.election
+    election = ballots_election(ballots, ElectionRound(args.round))
     store = InMemoryTallyStore(
         election,
         total_sections=len(ballots),
@@ -97,8 +105,9 @@ async def _publish_async(path: Path, speed: float | None) -> int:
     settings = get_settings()
     signer = build_signer(settings)
     ballots = SimulatedBallots.from_parquet(path)
-    async with open_redis(settings) as redis:
-        stream = BallotStream(redis, ACTIVE_KEYS)
+    async with open_database(settings) as connection, open_redis(settings) as redis:
+        record = await load_active_election(settings, connection)
+        stream = BallotStream(redis, record.keys)
         await stream.ensure_group()
         publisher = BallotPublisher(
             stream,
@@ -106,13 +115,20 @@ async def _publish_async(path: Path, speed: float | None) -> int:
             speed_factor=speed or settings.speed_factor,
             batch_size=settings.batch_size,
         )
-        return await publisher.publish(
-            ballots.in_release_order(), ACTIVE_SCENARIO.polls_close
-        )
+        return await publisher.publish(ballots.in_release_order(), record.polls_close)
+
+
+def ballots_election(ballots: SimulatedBallots, round_: ElectionRound) -> Election:
+    reference = REFERENCE_SCENARIO.election
+    return Election(
+        year=reference.year,
+        round=round_,
+        candidates=tuple(reference.candidate(n) for n in ballots.candidate_numbers),
+    )
 
 
 def _format_checkpoint(checkpoint: Checkpoint) -> str:
-    election = ACTIVE_SCENARIO.election
+    election = REFERENCE_SCENARIO.election
     ranking = sorted(checkpoint.shares.items(), key=lambda item: item[1], reverse=True)
     leaders = "  ".join(
         f"{election.candidate(number).name} {share:.2%}"

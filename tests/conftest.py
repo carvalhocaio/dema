@@ -41,6 +41,11 @@ def admin_url() -> str:
 
 
 @pytest.fixture(scope="session")
+def database_dsn(admin_url: str) -> str:
+    return urlsplit(admin_url)._replace(path=f"/{TEST_DATABASE}").geturl()
+
+
+@pytest.fixture(scope="session")
 def database_url(admin_url: str) -> Iterator[str]:
     statement = sql.SQL("DROP DATABASE IF EXISTS {database} WITH (FORCE)")
     with psycopg.connect(admin_url, autocommit=True) as admin:

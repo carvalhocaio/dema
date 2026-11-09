@@ -1,6 +1,5 @@
 from collections.abc import Iterator
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import pytest
 import redis
@@ -9,15 +8,13 @@ from dema.config import get_settings
 from dema.sections.catalog import SectionCatalog
 from dema.simulation.generator import BallotGenerator
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
-from tests.conftest import TEST_DATABASE
 from tests.helpers import SIGNING_KEY
 
 
 @pytest.fixture
 def cli_env(
-    monkeypatch: pytest.MonkeyPatch, admin_url: str, redis_url: str
+    monkeypatch: pytest.MonkeyPatch, database_dsn: str, redis_url: str
 ) -> Iterator[None]:
-    database_dsn = urlsplit(admin_url)._replace(path=f"/{TEST_DATABASE}").geturl()
     monkeypatch.setenv("DEMA_DATABASE_URL", database_dsn)
     monkeypatch.setenv("DEMA_REDIS_URL", redis_url)
     monkeypatch.setenv("DEMA_SIGNING_KEY", SIGNING_KEY.decode())

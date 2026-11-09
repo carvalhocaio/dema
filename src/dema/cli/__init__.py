@@ -2,7 +2,7 @@ import argparse
 from collections.abc import Callable, Sequence
 
 from dema.cli import api, ballots, database, election, sections, tally, workers
-from dema.tallying.redis_store import ElectionNotSetUpError
+from dema.domain.election import ElectionNotSetUpError
 from dema.wiring import MissingSigningKeyError
 
 Handler = Callable[[argparse.Namespace], None]

@@ -2,10 +2,11 @@ import pytest
 from redis.asyncio import Redis
 
 from dema.domain.ballot import Ballot
+from dema.domain.election import ElectionNotSetUpError
 from dema.sections.catalog import SectionCatalog
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
 from dema.streaming.keys import ElectionKeys
-from dema.tallying.redis_store import ElectionNotSetUpError, RedisTallyStore
+from dema.tallying.redis_store import RedisTallyStore
 from dema.tallying.validation import UnknownCandidateError
 from tests.factories import make_ballot
 from tests.helpers import expected_tally

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from dema.api.app import create_app
 from dema.config import Settings
-from tests.api.fakes import FakeSource, make_tally
+from tests.api.fakes import FakeElections, FakeSource, make_tally
 
 SETTINGS = Settings(broadcast_interval=0.01, cors_origins=["http://localhost:3000"])
 
@@ -17,8 +17,14 @@ def source() -> FakeSource:
 
 
 @pytest.fixture
-def client(source: FakeSource) -> Iterator[TestClient]:
-    with TestClient(create_app(source, SETTINGS)) as client:
+def elections() -> FakeElections:
+    return FakeElections()
+
+
+@pytest.fixture
+def client(source: FakeSource, elections: FakeElections) -> Iterator[TestClient]:
+    app = create_app(SETTINGS, elections, lambda _: source)
+    with TestClient(app) as client:
         yield client
 
 
@@ -58,12 +64,31 @@ def test_returns_fresh_results_on_each_request(
     assert client.get("/results").json()["verdict"] == "elected"
 
 
-def test_reports_unavailable_before_setup() -> None:
-    with TestClient(create_app(FakeSource(), SETTINGS)) as client:
+@pytest.mark.parametrize(
+    ("elections", "source"),
+    [
+        (FakeElections(ready=False), FakeSource(make_tally(4))),
+        (FakeElections(), FakeSource()),
+    ],
+    ids=["no election in the database", "no tally in redis"],
+)
+def test_reports_unavailable_before_setup(
+    elections: FakeElections, source: FakeSource
+) -> None:
+    with TestClient(create_app(SETTINGS, elections, lambda _: source)) as client:
         response = client.get("/results")
 
     assert response.status_code == 503
     assert response.json() == {"detail": "election is not set up yet"}
+
+
+def test_loads_the_active_election_once(
+    client: TestClient, elections: FakeElections
+) -> None:
+    client.get("/results")
+    client.get("/results")
+
+    assert elections.loads == [(2026, 1)]
 
 
 def test_allows_frontend_origin(client: TestClient) -> None:

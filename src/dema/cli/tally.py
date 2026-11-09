@@ -7,7 +7,7 @@ from dema.config import get_settings
 from dema.storage.ballots import PostgresBallotRepository
 from dema.tallying.outcome import decide
 from dema.tallying.redis_store import RedisTallyStore
-from dema.wiring import ACTIVE_KEYS, ACTIVE_SCENARIO, open_database, open_redis
+from dema.wiring import load_active_election, open_database, open_redis
 
 
 def register(commands: Subparsers) -> None:
@@ -28,9 +28,11 @@ def _watch(args: argparse.Namespace) -> None:
 
 
 async def _watch_async(interval: float) -> None:
-    election = ACTIVE_SCENARIO.election
-    async with open_redis(get_settings()) as redis:
-        store = RedisTallyStore(redis, ACTIVE_KEYS, election)
+    settings = get_settings()
+    async with open_database(settings) as connection, open_redis(settings) as redis:
+        record = await load_active_election(settings, connection)
+        election = record.election
+        store = RedisTallyStore(redis, record.keys, election)
         last_counted = -1
         while True:
             tally = await store.snapshot()
@@ -49,10 +51,10 @@ def _rebuild(_: argparse.Namespace) -> None:
 
 async def _rebuild_async() -> int:
     settings = get_settings()
-    election = ACTIVE_SCENARIO.election
     async with open_database(settings) as connection, open_redis(settings) as redis:
-        repository = PostgresBallotRepository(connection, election)
+        record = await load_active_election(settings, connection)
+        repository = PostgresBallotRepository(connection, record.election)
         tally = await repository.tally()
-        store = RedisTallyStore(redis, ACTIVE_KEYS, election)
+        store = RedisTallyStore(redis, record.keys, record.election)
         await store.restore(tally, await repository.counted_sections())
     return tally.counted_sections

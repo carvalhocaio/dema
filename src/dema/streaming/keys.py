@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from dema.domain.election import Election
+from dema.domain.election import Election, ElectionRound
 
 CONSUMER_GROUP = "tallying"
 
@@ -11,7 +11,11 @@ class ElectionKeys:
 
     @classmethod
     def for_election(cls, election: Election) -> "ElectionKeys":
-        return cls(f"dema:{election.year}:{election.round}")
+        return cls.for_round(election.year, election.round)
+
+    @classmethod
+    def for_round(cls, year: int, round_: ElectionRound) -> "ElectionKeys":
+        return cls(f"dema:{year}:{round_}")
 
     @property
     def ballots(self) -> str:

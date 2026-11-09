@@ -4,7 +4,7 @@ from itertools import batched
 from redis.asyncio import Redis
 
 from dema.domain.ballot import Ballot
-from dema.domain.election import Election
+from dema.domain.election import Election, ElectionNotSetUpError
 from dema.streaming.keys import ElectionKeys
 from dema.tallying.tally import Tally
 from dema.tallying.validation import ensure_known_candidates
@@ -22,10 +22,6 @@ end
 return 1
 """
 RESTORE_CHUNK = 10_000
-
-
-class ElectionNotSetUpError(RuntimeError):
-    pass
 
 
 class RedisTallyStore:
@@ -81,7 +77,7 @@ class RedisTallyStore:
             pipe.hgetall(self._keys.meta)
             fields, counted, meta = await pipe.execute()
         if not meta:
-            raise ElectionNotSetUpError("run `dema election setup` first")
+            raise ElectionNotSetUpError
         totals = {key.decode(): int(value) for key, value in fields.items()}
         return Tally(
             nominal_votes={

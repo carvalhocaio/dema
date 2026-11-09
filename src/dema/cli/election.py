@@ -8,9 +8,10 @@ from dema.cli.common import Subparsers
 from dema.config import get_settings
 from dema.sections.catalog import SectionCatalog
 from dema.storage.seed import clear_ballots, replace_sections, seed_election
+from dema.streaming.keys import ElectionKeys
 from dema.streaming.stream import BallotStream
 from dema.tallying.redis_store import RedisTallyStore
-from dema.wiring import ACTIVE_KEYS, ACTIVE_SCENARIO, open_redis
+from dema.wiring import REFERENCE_SCENARIO, open_redis
 
 
 def register(commands: Subparsers) -> None:
@@ -24,11 +25,11 @@ def register(commands: Subparsers) -> None:
 def _setup(args: argparse.Namespace) -> None:
     catalog = SectionCatalog.from_parquet(args.catalog)
     with psycopg.connect(str(get_settings().database_url)) as connection:
-        seed_election(connection, ACTIVE_SCENARIO)
-        clear_ballots(connection, ACTIVE_SCENARIO)
+        seed_election(connection, REFERENCE_SCENARIO)
+        clear_ballots(connection, REFERENCE_SCENARIO)
         replace_sections(connection, catalog)
     asyncio.run(_reset_redis(catalog))
-    election = ACTIVE_SCENARIO.election
+    election = REFERENCE_SCENARIO.election
     print(f"election {election.year}/{election.round} ready")
     print(f"sections:   {len(catalog):>13,}")
     print(f"electorate: {catalog.total_electorate:>13,}")
@@ -36,6 +37,8 @@ def _setup(args: argparse.Namespace) -> None:
 
 async def _reset_redis(catalog: SectionCatalog) -> None:
     async with open_redis(get_settings()) as redis:
-        await BallotStream(redis, ACTIVE_KEYS).clear()
-        store = RedisTallyStore(redis, ACTIVE_KEYS, ACTIVE_SCENARIO.election)
+        election = REFERENCE_SCENARIO.election
+        keys = ElectionKeys.for_election(election)
+        await BallotStream(redis, keys).clear()
+        store = RedisTallyStore(redis, keys, election)
         await store.reset(len(catalog), catalog.total_electorate)

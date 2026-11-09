@@ -3,6 +3,13 @@ from enum import IntEnum
 
 from dema.domain.candidate import Candidate
 
+NOT_SET_UP = "run 'dema election setup' first"
+
+
+class ElectionNotSetUpError(LookupError):
+    def __init__(self) -> None:
+        super().__init__(NOT_SET_UP)
+
 
 class ElectionRound(IntEnum):
     FIRST = 1

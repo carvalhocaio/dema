@@ -1,5 +1,6 @@
+from dema.domain.election import ElectionNotSetUpError, ElectionRound
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND, KEONS, NICO
-from dema.tallying.redis_store import ElectionNotSetUpError
+from dema.storage.elections import ElectionRecord
 from dema.tallying.tally import Tally
 
 
@@ -23,5 +24,20 @@ class FakeSource:
 
     async def snapshot(self) -> Tally:
         if self.tally is None:
-            raise ElectionNotSetUpError("not set up")
+            raise ElectionNotSetUpError
         return self.tally
+
+
+class FakeElections:
+    def __init__(self, ready: bool = True) -> None:
+        self.ready = ready
+        self.loads: list[tuple[int, ElectionRound]] = []
+
+    async def load(self, year: int, round_: ElectionRound) -> ElectionRecord:
+        self.loads.append((year, round_))
+        if not self.ready:
+            raise ElectionNotSetUpError
+        return ElectionRecord(
+            election=DEMA_2026_FIRST_ROUND.election,
+            polls_close=DEMA_2026_FIRST_ROUND.polls_close,
+        )

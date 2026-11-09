@@ -8,10 +8,9 @@ from dema.config import Settings
 from dema.integrity.signer import BallotSigner
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
 from dema.simulation.scenario import Scenario
-from dema.streaming.keys import ElectionKeys
+from dema.storage.elections import ElectionRecord, ElectionRepository
 
-ACTIVE_SCENARIO: Scenario = DEMA_2026_FIRST_ROUND
-ACTIVE_KEYS = ElectionKeys.for_election(ACTIVE_SCENARIO.election)
+REFERENCE_SCENARIO: Scenario = DEMA_2026_FIRST_ROUND
 
 
 class MissingSigningKeyError(RuntimeError):
@@ -43,3 +42,9 @@ async def open_database(settings: Settings) -> AsyncIterator[AsyncConnection]:
     )
     async with connection:
         yield connection
+
+
+async def load_active_election(
+    settings: Settings, connection: AsyncConnection
+) -> ElectionRecord:
+    return await ElectionRepository(connection).load(settings.year, settings.round)

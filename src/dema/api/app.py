@@ -1,44 +1,43 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
-from typing import Annotated, Protocol
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
+from dema.api.active import ActiveRound, ElectionSource, SnapshotFactory
 from dema.api.broadcaster import Broadcaster
 from dema.api.schemas import ResultsView
 from dema.config import Settings, get_settings
-from dema.tallying.outcome import decide
-from dema.tallying.redis_store import ElectionNotSetUpError, RedisTallyStore
-from dema.tallying.tally import Tally
-from dema.wiring import ACTIVE_KEYS, ACTIVE_SCENARIO, open_redis
+from dema.domain.election import Election, ElectionNotSetUpError
+from dema.storage.elections import ElectionRepository
+from dema.streaming.keys import ElectionKeys
+from dema.tallying.redis_store import RedisTallyStore
+from dema.wiring import open_database, open_redis
 
-ELECTION = ACTIVE_SCENARIO.election
 NOT_READY = "election is not set up yet"
 
 
-class SnapshotSource(Protocol):
-    async def snapshot(self) -> Tally: ...
-
-
 def create_app(
-    source: SnapshotSource | None = None, settings: Settings | None = None
+    settings: Settings | None = None,
+    elections: ElectionSource | None = None,
+    snapshots: SnapshotFactory | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as stack:
-            store = source or await _redis_store(stack, settings)
-
-            async def load() -> ResultsView:
-                tally = await store.snapshot()
-                return ResultsView.build(ELECTION, tally, decide(ELECTION, tally))
-
+            active = ActiveRound(
+                elections or await _repository(stack, settings),
+                snapshots or await _redis_snapshots(stack, settings),
+                settings.year,
+                settings.round,
+            )
             broadcaster = Broadcaster(
-                load,
+                active.results,
                 interval=settings.broadcast_interval,
                 ignored_errors=(ElectionNotSetUpError,),
             )
@@ -68,9 +67,20 @@ def create_app(
     return app
 
 
-async def _redis_store(stack: AsyncExitStack, settings: Settings) -> RedisTallyStore:
+async def _repository(stack: AsyncExitStack, settings: Settings) -> ElectionSource:
+    connection = await stack.enter_async_context(open_database(settings))
+    return ElectionRepository(connection)
+
+
+async def _redis_snapshots(
+    stack: AsyncExitStack, settings: Settings
+) -> SnapshotFactory:
     redis = await stack.enter_async_context(open_redis(settings))
-    return RedisTallyStore(redis, ACTIVE_KEYS, ELECTION)
+
+    def snapshots(election: Election) -> RedisTallyStore:
+        return RedisTallyStore(redis, ElectionKeys.for_election(election), election)
+
+    return snapshots
 
 
 def get_broadcaster(request: Request) -> Broadcaster[ResultsView]:
