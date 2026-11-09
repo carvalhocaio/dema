@@ -8,6 +8,7 @@ import { ResultsSkeleton } from "@/components/results/results-skeleton"
 import { RoundTabs } from "@/components/results/round-tabs"
 import { RoundView, type RoundReport } from "@/components/results/round-view"
 import { SetupPendingCard } from "@/components/results/setup-pending-card"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useRounds } from "@/hooks/use-rounds"
 import { useSelectedRound } from "@/hooks/use-selected-round"
@@ -41,6 +42,7 @@ export function ResultsScreen() {
           />
           <div className="flex items-center justify-between gap-3">
             <RoundTabs rounds={rounds} liveStatus={liveStatus} />
+            <ThemeToggle />
           </div>
         </div>
         {status === "unavailable" && (
