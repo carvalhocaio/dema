@@ -1,8 +1,12 @@
+from datetime import datetime
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict
 
 from dema.domain.election import Election
 from dema.tallying.outcome import Outcome, Verdict
 from dema.tallying.tally import Tally
+from dema.tallying.timeline import Timeline
 
 
 class View(BaseModel):
@@ -75,4 +79,48 @@ class ResultsView(View):
             ),
             verdict=outcome.verdict,
             finalists=tuple(candidate.number for candidate in outcome.finalists),
+        )
+
+
+class RoundStatus(StrEnum):
+    LIVE = "live"
+    FINAL = "final"
+
+
+class RoundView(View):
+    round: int
+    status: RoundStatus
+
+
+class TimelinePointView(View):
+    at: datetime
+    progress: float
+    shares: dict[int, float]
+    verdict: Verdict
+
+
+class TimelineView(View):
+    year: int
+    round: int
+    points: tuple[TimelinePointView, ...]
+    decided_at: datetime | None
+
+    @classmethod
+    def build(cls, election: Election, timeline: Timeline) -> "TimelineView":
+        return cls(
+            year=election.year,
+            round=election.round,
+            points=tuple(
+                TimelinePointView(
+                    at=point.at,
+                    progress=point.tally.progress,
+                    shares={
+                        number: point.tally.share(number)
+                        for number in sorted(election.candidate_numbers)
+                    },
+                    verdict=point.outcome.verdict,
+                )
+                for point in timeline.points
+            ),
+            decided_at=timeline.decided_at,
         )

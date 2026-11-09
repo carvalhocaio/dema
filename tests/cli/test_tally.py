@@ -84,9 +84,15 @@ def test_rebuild_restores_redis_from_postgres(
 ) -> None:
     main(["election", "setup", str(catalog_path)])
     asyncio.run(save_to_postgres(small_ballots[:40]))
+    migrated.execute("DELETE FROM minute_votes; DELETE FROM minute_totals")
+    migrated.commit()
     capsys.readouterr()
 
     main(["tally", "rebuild"])
 
     assert capsys.readouterr().out == "restored 40 counted sections\n"
+    [(rolled_up,)] = migrated.execute(
+        "SELECT sum(sections) FROM minute_totals"
+    ).fetchall()
+    assert rolled_up == 40
     assert asyncio.run(snapshot()) == expected_tally(small_catalog, small_ballots[:40])

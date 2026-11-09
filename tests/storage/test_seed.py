@@ -54,6 +54,13 @@ def test_clears_election_ballots(seeded: psycopg.Connection) -> None:
         (section,),
     )
 
+    seeded.execute(
+        "INSERT INTO minute_totals VALUES (2026, 1, now(), 1, 300, 1, 1); "
+        "INSERT INTO minute_votes VALUES (2026, 1, now(), 27, 100)"
+    )
+
     clear_ballots(seeded, ELECTION)
 
     assert scalar(seeded, "SELECT count(*) FROM ballots") == 0
+    assert scalar(seeded, "SELECT count(*) FROM minute_totals") == 0
+    assert scalar(seeded, "SELECT count(*) FROM minute_votes") == 0

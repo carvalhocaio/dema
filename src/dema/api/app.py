@@ -1,28 +1,50 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
-from dema.api.active import ActiveRound, ElectionSource, SnapshotFactory
 from dema.api.broadcaster import Broadcaster
-from dema.api.schemas import ResultsView
+from dema.api.schemas import ResultsView, RoundStatus, RoundView, TimelineView
+from dema.api.sources import ActiveRound, Archive, PostgresArchive, SnapshotFactory
 from dema.config import Settings, get_settings
-from dema.domain.election import Election, ElectionNotSetUpError
-from dema.storage.elections import ElectionRepository
+from dema.domain.election import Election, ElectionNotSetUpError, ElectionRound
+from dema.storage.elections import ElectionRecord
 from dema.streaming.keys import ElectionKeys
+from dema.tallying.outcome import decide
 from dema.tallying.redis_store import RedisTallyStore
 from dema.wiring import open_database, open_redis
 
 NOT_READY = "election is not set up yet"
+NOT_FOUND = "round {round} is not set up"
+NOT_LIVE = "round {round} is not being counted"
+
+
+@dataclass(frozen=True, slots=True)
+class Context:
+    settings: Settings
+    archive: Archive
+    broadcaster: Broadcaster[ResultsView]
+
+    def is_active(self, round_: ElectionRound) -> bool:
+        return round_ is self.settings.round
+
+    async def record(self, round_: ElectionRound) -> ElectionRecord:
+        try:
+            return await self.archive.load(self.settings.year, round_)
+        except ElectionNotSetUpError as error:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, NOT_FOUND.format(round=int(round_))
+            ) from error
 
 
 def create_app(
     settings: Settings | None = None,
-    elections: ElectionSource | None = None,
+    archive: Archive | None = None,
     snapshots: SnapshotFactory | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
@@ -30,8 +52,9 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as stack:
+            resolved = archive or await _postgres_archive(stack, settings)
             active = ActiveRound(
-                elections or await _repository(stack, settings),
+                resolved,
                 snapshots or await _redis_snapshots(stack, settings),
                 settings.year,
                 settings.round,
@@ -43,7 +66,7 @@ def create_app(
             )
             await broadcaster.refresh()
             task = asyncio.create_task(broadcaster.run())
-            app.state.broadcaster = broadcaster
+            app.state.context = Context(settings, resolved, broadcaster)
             yield
             task.cancel()
             with suppress(asyncio.CancelledError):
@@ -57,19 +80,21 @@ def create_app(
         allow_headers=["*"],
     )
     app.add_api_route("/health", health, methods=["GET"])
-    app.add_api_route("/results", results, methods=["GET"])
+    app.add_api_route("/rounds", rounds, methods=["GET"])
+    app.add_api_route("/rounds/{round_}/results", round_results, methods=["GET"])
     app.add_api_route(
-        "/results/stream",
-        results_stream,
+        "/rounds/{round_}/stream",
+        round_stream,
         methods=["GET"],
         response_class=EventSourceResponse,
     )
+    app.add_api_route("/rounds/{round_}/timeline", round_timeline, methods=["GET"])
     return app
 
 
-async def _repository(stack: AsyncExitStack, settings: Settings) -> ElectionSource:
+async def _postgres_archive(stack: AsyncExitStack, settings: Settings) -> Archive:
     connection = await stack.enter_async_context(open_database(settings))
-    return ElectionRepository(connection)
+    return PostgresArchive(connection)
 
 
 async def _redis_snapshots(
@@ -83,28 +108,59 @@ async def _redis_snapshots(
     return snapshots
 
 
-def get_broadcaster(request: Request) -> Broadcaster[ResultsView]:
-    return request.app.state.broadcaster
+def get_context(request: Request) -> Context:
+    return request.app.state.context
 
 
-BroadcasterDependency = Annotated[Broadcaster[ResultsView], Depends(get_broadcaster)]
+ContextDependency = Annotated[Context, Depends(get_context)]
 
 
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-async def results(broadcaster: BroadcasterDependency) -> ResultsView:
-    await broadcaster.refresh()
-    if broadcaster.latest is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_READY)
-    return broadcaster.latest
+async def rounds(context: ContextDependency) -> list[RoundView]:
+    return [
+        RoundView(
+            round=round_,
+            status=RoundStatus.LIVE if context.is_active(round_) else RoundStatus.FINAL,
+        )
+        for round_ in await context.archive.rounds(context.settings.year)
+    ]
 
 
-async def results_stream(
-    broadcaster: BroadcasterDependency,
+async def round_results(
+    round_: ElectionRound, context: ContextDependency
+) -> ResultsView:
+    if context.is_active(round_):
+        await context.broadcaster.refresh()
+        if context.broadcaster.latest is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_READY)
+        return context.broadcaster.latest
+    election = (await context.record(round_)).election
+    tally = await context.archive.tally(election)
+    return ResultsView.build(election, tally, decide(election, tally))
+
+
+def live_context(round_: ElectionRound, context: ContextDependency) -> Context:
+    if not context.is_active(round_):
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, NOT_LIVE.format(round=int(round_))
+        )
+    return context
+
+
+async def round_stream(
+    context: Annotated[Context, Depends(live_context)],
 ) -> AsyncIterator[ServerSentEvent]:
-    async for view in broadcaster.subscribe():
+    async for view in context.broadcaster.subscribe():
         yield ServerSentEvent(
             data=view, event="results", id=str(view.progress.counted_sections)
         )
+
+
+async def round_timeline(
+    round_: ElectionRound, context: ContextDependency
+) -> TimelineView:
+    election = (await context.record(round_)).election
+    return TimelineView.build(election, await context.archive.timeline(election))

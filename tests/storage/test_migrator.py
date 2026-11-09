@@ -16,7 +16,7 @@ def test_discovers_packaged_migrations_in_order() -> None:
 def test_applies_pending_migrations_once(connection: psycopg.Connection) -> None:
     migrator = Migrator(connection)
 
-    assert migrator.migrate() == ["0001_initial_schema"]
+    assert migrator.migrate() == ["0001_initial_schema", "0002_minute_rollup"]
     assert migrator.migrate() == []
 
 

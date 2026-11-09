@@ -65,8 +65,12 @@ def replace_sections(connection: psycopg.Connection, catalog: SectionCatalog) ->
 
 
 def clear_ballots(connection: psycopg.Connection, election: Election) -> None:
+    scope = (election.year, election.round)
     with connection.transaction():
         connection.execute(
-            "DELETE FROM ballots WHERE year = %s AND round = %s",
-            (election.year, election.round),
+            "DELETE FROM minute_votes WHERE year = %s AND round = %s", scope
         )
+        connection.execute(
+            "DELETE FROM minute_totals WHERE year = %s AND round = %s", scope
+        )
+        connection.execute("DELETE FROM ballots WHERE year = %s AND round = %s", scope)

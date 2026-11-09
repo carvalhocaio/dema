@@ -54,6 +54,7 @@ async def _rebuild_async() -> int:
     async with open_database(settings) as connection, open_redis(settings) as redis:
         record = await load_active_election(settings, connection)
         repository = PostgresBallotRepository(connection, record.election)
+        await repository.rebuild_rollup()
         tally = await repository.tally()
         store = RedisTallyStore(redis, record.keys, record.election)
         await store.restore(tally, await repository.counted_sections())
