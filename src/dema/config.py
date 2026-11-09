@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     signing_key: SecretStr | None = None
     speed_factor: float = Field(default=120.0, gt=0)
     batch_size: int = Field(default=500, gt=0)
+    broadcast_interval: float = Field(default=0.5, gt=0)
+    cors_origins: list[str] = ["http://localhost:3000"]
 
 
 @lru_cache
