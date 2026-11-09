@@ -1,5 +1,6 @@
 import pytest
 from redis.asyncio import Redis
+from redis.exceptions import ResponseError
 
 from dema.integrity.signer import BallotSigner
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
@@ -93,3 +94,28 @@ async def test_clear_removes_streams(stream: BallotStream, redis_client: Redis) 
     await stream.clear()
 
     assert await redis_client.exists(KEYS.ballots) == 0
+
+
+async def test_group_creation_surfaces_unexpected_errors(
+    redis_client: Redis,
+) -> None:
+    await redis_client.set(KEYS.ballots, "not a stream")
+
+    with pytest.raises(ResponseError, match="WRONGTYPE"):
+        await BallotStream(redis_client, KEYS).ensure_group()
+
+
+async def test_publishing_nothing_is_a_no_op(stream: BallotStream) -> None:
+    assert await stream.publish([]) == 0
+
+
+async def test_rejecting_malformed_entries_keeps_only_the_reason(
+    stream: BallotStream, redis_client: Redis
+) -> None:
+    await redis_client.xadd(KEYS.ballots, {"payload": b"{}"})
+    [entry] = await stream.read("worker-1", count=10, block_ms=10)
+
+    await stream.reject(entry, "malformed entry")
+
+    [fields] = await rejected_entries(redis_client, KEYS)
+    assert set(fields) == {b"entry", b"reason"}

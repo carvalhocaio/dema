@@ -50,3 +50,8 @@ def test_scenario_rejects_rates_without_valid_votes() -> None:
 def test_scenario_requires_aware_closing_time() -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         replace(DEMA_2026_FIRST_ROUND, polls_close=datetime(2026, 10, 4, 17))
+
+
+def test_scenario_rejects_negative_rates() -> None:
+    with pytest.raises(ValueError, match="must not be negative"):
+        replace(DEMA_2026_FIRST_ROUND, blank_rate=-0.01)

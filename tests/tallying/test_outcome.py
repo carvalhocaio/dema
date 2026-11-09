@@ -102,3 +102,13 @@ def test_second_round_elects_once_lead_exceeds_remaining() -> None:
     tally = make_tally({NICO.number: 380, KEONS.number: 520}, remaining=100)
 
     assert decide(SECOND_ROUND, tally).verdict is Verdict.ELECTED
+
+
+def test_first_round_with_two_candidates_goes_to_runoff_on_a_tie() -> None:
+    election = make_election(candidates=(NICO, KEONS))
+    tally = make_tally({NICO.number: 300, KEONS.number: 300})
+
+    outcome = decide(election, tally)
+
+    assert outcome.verdict is Verdict.RUNOFF
+    assert outcome.finalists == (NICO, KEONS)

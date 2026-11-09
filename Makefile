@@ -61,5 +61,5 @@ web-dev: ## Starts the web app dev server on http://localhost:3000
 web-check: ## Runs web lint, typecheck, tests and production build
 	npm --prefix web run lint
 	npm --prefix web run typecheck
-	npm --prefix web test
+	npm --prefix web run test -- --coverage
 	npm --prefix web run build

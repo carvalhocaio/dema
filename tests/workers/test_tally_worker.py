@@ -1,3 +1,7 @@
+import asyncio
+import hashlib
+import hmac
+
 import pytest
 from psycopg import AsyncConnection
 from redis.asyncio import Redis
@@ -10,6 +14,7 @@ from dema.storage.ballots import PostgresBallotRepository
 from dema.streaming.keys import ElectionKeys
 from dema.streaming.stream import BallotStream
 from dema.tallying.redis_store import RedisTallyStore
+from dema.workers import tally_worker
 from dema.workers.tally_worker import TallyWorker
 from tests.helpers import SIGNING_KEY, expected_tally, rejected_entries
 
@@ -129,3 +134,60 @@ async def test_rejects_tampered_ballots(
     assert await store.snapshot() == expected_tally(small_catalog, small_ballots[:1])
     [fields] = await rejected_entries(redis_client, KEYS)
     assert fields[b"reason"] == b"invalid signature"
+
+
+async def test_rejects_malformed_entries(
+    stream: BallotStream,
+    repository: PostgresBallotRepository,
+    store: RedisTallyStore,
+    redis_client: Redis,
+) -> None:
+    await redis_client.xadd(KEYS.ballots, {"payload": b"{}"})
+
+    await drain(make_worker(stream, repository, store))
+
+    [fields] = await rejected_entries(redis_client, KEYS)
+    assert fields[b"reason"] == b"malformed entry"
+
+
+async def test_rejects_authentic_but_invalid_payloads(
+    stream: BallotStream,
+    repository: PostgresBallotRepository,
+    store: RedisTallyStore,
+    redis_client: Redis,
+) -> None:
+    payload = b"{}"
+    signature = hmac.new(SIGNING_KEY, payload, hashlib.sha3_256).hexdigest()
+    await stream.publish([SignedBallot(payload=payload, signature=signature)])
+
+    await drain(make_worker(stream, repository, store))
+
+    [fields] = await rejected_entries(redis_client, KEYS)
+    assert fields[b"reason"].startswith(b"invalid payload:")
+
+
+async def test_run_retries_failed_batches_until_stopped(
+    stream: BallotStream,
+    repository: PostgresBallotRepository,
+    store: RedisTallyStore,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    worker = make_worker(stream, repository, store)
+    stop = asyncio.Event()
+    attempts: list[int] = []
+
+    async def fail_then_stop() -> int:
+        attempts.append(len(attempts))
+        if len(attempts) == 1:
+            raise RuntimeError("database went away")
+        stop.set()
+        return 0
+
+    monkeypatch.setattr(tally_worker, "RETRY_DELAY_SECONDS", 0)
+    monkeypatch.setattr(worker, "run_once", fail_then_stop)
+
+    await worker.run(stop)
+
+    assert attempts == [0, 1]
+    assert "batch failed" in caplog.text
