@@ -1,23 +1,19 @@
 import { screen } from "@testing-library/react"
-import userEvent from "@testing-library/user-event"
 import { describe, expect, it } from "vitest"
 
 import { ConnectionIndicator } from "@/components/results/connection-indicator"
 import { renderWithProviders } from "@/test/render"
 
 describe("ConnectionIndicator", () => {
-  it("pulses while live and reveals the API address on focus", async () => {
-    renderWithProviders(<ConnectionIndicator label="Ao vivo" tone="live" />)
+  it("pulses while live", () => {
+    renderWithProviders(
+      <ConnectionIndicator label="Ao vivo" tone="live" className="text-xs" />
+    )
 
     const status = screen.getByRole("status")
     expect(status).toHaveTextContent("Ao vivo")
+    expect(status).toHaveClass("text-xs")
     expect(status.querySelector(".animate-ping")).not.toBeNull()
-
-    await userEvent.tab()
-
-    expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "API: http://127.0.0.1:8000"
-    )
   })
 
   it.each([

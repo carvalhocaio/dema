@@ -10,6 +10,8 @@ import { VerdictBanner } from "@/components/results/verdict-banner"
 import { VoteBreakdown } from "@/components/results/vote-breakdown"
 import { makeResults } from "@/test/fixtures"
 
+const PALETTE = [27, 31, 99]
+
 describe("ProgressPanel", () => {
   it("shows the counted share with pt-BR numbers", () => {
     render(<ProgressPanel progress={makeResults().progress} />)
@@ -30,7 +32,13 @@ describe("ProgressPanel", () => {
 
 describe("VerdictBanner", () => {
   it("renders nothing while undecided", () => {
-    const { container } = render(<VerdictBanner results={makeResults()} />)
+    const { container } = render(
+      <VerdictBanner
+        results={makeResults()}
+        palette={PALETTE}
+        decision={null}
+      />
+    )
 
     expect(container).toBeEmptyDOMElement()
   })
@@ -38,20 +46,22 @@ describe("VerdictBanner", () => {
   it("names the runoff finalists", () => {
     render(
       <VerdictBanner
+        palette={PALETTE}
+        decision={null}
         results={makeResults({ verdict: "runoff", finalists: [27, 99] })}
       />
     )
 
     expect(screen.getByText("2º turno: Keons × Nico")).toBeInTheDocument()
     expect(
-      screen.getByText(/matematicamente definido com 87,30%/)
+      screen.getByText(/Matematicamente definido com 87,30%/)
     ).toBeInTheDocument()
   })
 })
 
 describe("CandidateList", () => {
   it("lists candidates in the received order without badges while undecided", () => {
-    render(<CandidateList results={makeResults()} />)
+    render(<CandidateList results={makeResults()} palette={PALETTE} />)
 
     const rows = screen.getAllByRole("listitem")
     expect(
@@ -63,6 +73,7 @@ describe("CandidateList", () => {
   it("badges finalists and recedes the others after a verdict", () => {
     render(
       <CandidateList
+        palette={PALETTE}
         results={makeResults({ verdict: "elected", finalists: [27] })}
       />
     )
@@ -112,9 +123,11 @@ describe("ApiUnavailableNotice", () => {
 })
 
 describe("ResultsBoard", () => {
-  it("stacks progress, verdict, candidates and votes", () => {
+  it("stacks progress, verdict, timeline, candidates and votes", () => {
     render(
       <ResultsBoard
+        palette={PALETTE}
+        timeline={null}
         results={makeResults({ verdict: "runoff", finalists: [27, 99] })}
       />
     )
@@ -123,9 +136,36 @@ describe("ResultsBoard", () => {
       screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)
     ).toEqual([
       "Seções totalizadas",
+      "Minuto a minuto · % dos votos válidos",
       "Candidatos · % dos votos válidos",
       "Votos",
     ])
+    expect(
+      screen.getByText("Aguardando os primeiros boletins.")
+    ).toBeInTheDocument()
     expect(screen.getByText("2º turno: Keons × Nico")).toBeInTheDocument()
+  })
+})
+
+describe("VerdictBanner with a timeline", () => {
+  it("dates the decision from the minute it was secured", () => {
+    render(
+      <VerdictBanner
+        palette={PALETTE}
+        decision={{
+          at: "2026-10-04T22:21:00Z",
+          progress: 0.4312,
+          shares: {},
+          verdict: "runoff",
+        }}
+        results={makeResults({ verdict: "runoff", finalists: [27, 99] })}
+      />
+    )
+
+    expect(
+      screen.getByText(
+        "Matematicamente definido às 19:21, com 43,12% das seções totalizadas."
+      )
+    ).toBeInTheDocument()
   })
 })

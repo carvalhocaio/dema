@@ -1,42 +1,22 @@
 import { act, renderHook, waitFor } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { useResults } from "@/hooks/use-results"
+import { useRoundResults } from "@/hooks/use-round-results"
 import { FakeEventSource } from "@/test/event-source"
 import { makeResults } from "@/test/fixtures"
-
-type FetchResponse = { status: number; ok: boolean; json: () => unknown }
-
-function respond(status: number, body: unknown = {}): FetchResponse {
-  return { status, ok: status >= 200 && status < 300, json: () => body }
-}
-
-function stubFetch(...responses: Array<FetchResponse | Error>) {
-  const queue = [...responses]
-  const fetchMock = vi.fn(async () => {
-    const next = queue.shift() ?? respond(200, makeResults())
-    if (next instanceof Error) throw next
-    return next
-  })
-  vi.stubGlobal("fetch", fetchMock)
-  return fetchMock
-}
+import { respond, stubFetch, type FetchResponse } from "@/test/fetch"
 
 beforeEach(() => {
   FakeEventSource.instances = []
   vi.stubGlobal("EventSource", FakeEventSource)
 })
 
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
-
-describe("useResults", () => {
-  it("starts connecting and paints the snapshot before the first event", async () => {
-    const results = makeResults()
+describe("useRoundResults for the live round", () => {
+  it("paints the snapshot before the first event", async () => {
+    const results = makeResults({ round: 2 })
     const fetchMock = stubFetch(respond(200, results))
 
-    const { result } = renderHook(() => useResults())
+    const { result } = renderHook(() => useRoundResults(2, true))
 
     expect(result.current).toEqual({
       results: null,
@@ -44,19 +24,19 @@ describe("useResults", () => {
       setup: "unknown",
     })
     await waitFor(() => expect(result.current.results).toEqual(results))
-    expect(result.current.setup).toBe("ready")
+    expect(result.current.connection).toBe("live")
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:8000/results",
+      "http://127.0.0.1:8000/rounds/2/results",
       expect.objectContaining({ cache: "no-store" })
     )
     expect(FakeEventSource.latest().url).toBe(
-      "http://127.0.0.1:8000/results/stream"
+      "http://127.0.0.1:8000/rounds/2/stream"
     )
   })
 
   it("flags a pending setup on 503 until the stream delivers results", async () => {
     stubFetch(respond(503))
-    const { result } = renderHook(() => useResults())
+    const { result } = renderHook(() => useRoundResults(1, true))
     await waitFor(() => expect(result.current.setup).toBe("pending"))
 
     const results = makeResults()
@@ -71,7 +51,7 @@ describe("useResults", () => {
 
   it("keeps a ready election when a late 503 arrives", async () => {
     stubFetch(respond(200, makeResults()), respond(503))
-    const { result } = renderHook(() => useResults())
+    const { result } = renderHook(() => useRoundResults(1, true))
     await waitFor(() => expect(result.current.setup).toBe("ready"))
 
     act(() => FakeEventSource.latest().open())
@@ -80,28 +60,25 @@ describe("useResults", () => {
     expect(result.current.setup).toBe("ready")
   })
 
-  it("ignores failed and unreachable snapshots", async () => {
+  it("leaves the connection to the stream when snapshots fail", async () => {
     const fetchMock = stubFetch(respond(500), new TypeError("offline"))
-    const { result } = renderHook(() => useResults())
+    const { result } = renderHook(() => useRoundResults(1, true))
 
     act(() => FakeEventSource.latest().open())
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
-    expect(result.current.results).toBeNull()
-    expect(result.current.setup).toBe("unknown")
+    expect(result.current).toMatchObject({ results: null, connection: "live" })
   })
 
-  it("follows the connection through outages and reconnections", async () => {
+  it("follows the connection through outages and reconnections", () => {
     stubFetch(respond(500), respond(500), respond(500))
-    const { result } = renderHook(() => useResults())
+    const { result } = renderHook(() => useRoundResults(1, true))
     const source = FakeEventSource.latest()
 
     act(() => source.fail(FakeEventSource.CONNECTING))
     expect(result.current.connection).toBe("unavailable")
 
     act(() => source.open())
-    expect(result.current.connection).toBe("live")
-
     act(() => source.fail(FakeEventSource.CONNECTING))
     expect(result.current.connection).toBe("reconnecting")
 
@@ -119,11 +96,11 @@ describe("useResults", () => {
 
   it("closes the stream and drops in-flight snapshots on unmount", async () => {
     let release: (response: FetchResponse) => void = () => {}
-    const fetchMock = vi.fn(
-      () => new Promise<FetchResponse>((resolve) => (release = resolve))
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<FetchResponse>((resolve) => (release = resolve)))
     )
-    vi.stubGlobal("fetch", fetchMock)
-    const { result, unmount } = renderHook(() => useResults())
+    const { result, unmount } = renderHook(() => useRoundResults(1, true))
     const source = FakeEventSource.latest()
 
     unmount()
@@ -131,5 +108,31 @@ describe("useResults", () => {
 
     expect(source.readyState).toBe(FakeEventSource.CLOSED)
     expect(result.current.results).toBeNull()
+  })
+})
+
+describe("useRoundResults for a finished round", () => {
+  it("fetches once without opening a stream", async () => {
+    const results = makeResults({ verdict: "runoff", finalists: [27, 99] })
+    stubFetch(respond(200, results))
+
+    const { result } = renderHook(() => useRoundResults(1, false))
+
+    await waitFor(() =>
+      expect(result.current).toEqual({
+        results,
+        connection: "final",
+        setup: "ready",
+      })
+    )
+    expect(FakeEventSource.instances).toHaveLength(0)
+  })
+
+  it("reports an unreachable archive", async () => {
+    stubFetch(new TypeError("offline"))
+
+    const { result } = renderHook(() => useRoundResults(1, false))
+
+    await waitFor(() => expect(result.current.connection).toBe("unavailable"))
   })
 })

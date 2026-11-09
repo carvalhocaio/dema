@@ -1,14 +1,15 @@
-import type { Candidate } from "@/lib/results"
-
 export const CANDIDATE_PALETTE_SIZE = 6
 export const NEUTRAL_CANDIDATE_COLOR = "var(--candidate-other)"
 
+export function palette(...groups: ReadonlyArray<readonly number[]>): number[] {
+  return [...new Set(groups.flat())].sort((a, b) => a - b)
+}
+
 export function candidateColor(
-  candidates: readonly Candidate[],
+  universe: readonly number[],
   number: number
 ): string {
-  const numbers = candidates.map((c) => c.number).sort((a, b) => a - b)
-  const index = numbers.indexOf(number)
+  const index = universe.indexOf(number)
   if (index < 0 || index >= CANDIDATE_PALETTE_SIZE) {
     return NEUTRAL_CANDIDATE_COLOR
   }

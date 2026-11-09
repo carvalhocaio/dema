@@ -6,8 +6,17 @@ import {
   verdictLabel,
   type Results,
 } from "@/lib/results"
+import { formatClock, type TimelinePoint } from "@/lib/timeline"
 
-export function VerdictBanner({ results }: { results: Results }) {
+export function VerdictBanner({
+  results,
+  palette,
+  decision,
+}: {
+  results: Results
+  palette: readonly number[]
+  decision: TimelinePoint | null
+}) {
   const label = verdictLabel(results)
   if (!label) return null
   const finalists = finalistCandidates(results)
@@ -22,7 +31,7 @@ export function VerdictBanner({ results }: { results: Results }) {
           {finalists.map((candidate) => (
             <CandidateMarker
               key={candidate.number}
-              color={candidateColor(results.candidates, candidate.number)}
+              color={candidateColor(palette, candidate.number)}
             />
           ))}
         </div>
@@ -31,8 +40,9 @@ export function VerdictBanner({ results }: { results: Results }) {
         </p>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        Resultado matematicamente definido com{" "}
-        {formatPercent(results.progress.ratio)} das seções totalizadas.
+        {decision
+          ? `Matematicamente definido às ${formatClock(Date.parse(decision.at))}, com ${formatPercent(decision.progress)} das seções totalizadas.`
+          : `Matematicamente definido com ${formatPercent(results.progress.ratio)} das seções totalizadas.`}
       </p>
     </section>
   )

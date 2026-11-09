@@ -11,7 +11,13 @@ import {
   type Results,
 } from "@/lib/results"
 
-export function CandidateList({ results }: { results: Results }) {
+export function CandidateList({
+  results,
+  palette,
+}: {
+  results: Results
+  palette: readonly number[]
+}) {
   const { candidates, verdict } = results
   const register = useFlip<HTMLLIElement>(candidates.map((c) => c.number))
   const decided = hasVerdict(results)
@@ -34,7 +40,7 @@ export function CandidateList({ results }: { results: Results }) {
             <li key={candidate.number} ref={register(candidate.number)}>
               <CandidateRow
                 candidate={candidate}
-                color={candidateColor(candidates, candidate.number)}
+                color={candidateColor(palette, candidate.number)}
                 badge={finalist ? finalistBadge(verdict) : null}
                 receded={decided && !finalist}
               />
