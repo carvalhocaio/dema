@@ -28,12 +28,26 @@ def test_simulates_ballots_from_catalog(
     main(["sections", "synth", "2000", str(catalog)])
     capsys.readouterr()
 
-    main(["ballots", "simulate", str(catalog), str(ballots)])
+    main(["ballots", "simulate", str(catalog), str(ballots), "--seed", "40"])
     output = capsys.readouterr().out
 
     assert ballots.exists()
+    assert output.startswith("national strength (seed 40):\n  Keons")
     assert "ballots: 2,000" in output
     assert "100.0%" in output
+
+
+def test_simulates_the_reference_scenario_on_request(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    catalog = tmp_path / "sections.parquet"
+    ballots = tmp_path / "ballots.parquet"
+    main(["sections", "synth", "500", str(catalog)])
+    capsys.readouterr()
+
+    main(["ballots", "simulate", str(catalog), str(ballots), "--scenario", "reference"])
+
+    assert "national strength" not in capsys.readouterr().out
 
 
 def test_tallies_simulated_ballots(
@@ -42,7 +56,7 @@ def test_tallies_simulated_ballots(
     catalog = tmp_path / "sections.parquet"
     ballots = tmp_path / "ballots.parquet"
     main(["sections", "synth", "2000", str(catalog)])
-    main(["ballots", "simulate", str(catalog), str(ballots)])
+    main(["ballots", "simulate", str(catalog), str(ballots), "--scenario", "reference"])
     capsys.readouterr()
 
     main(["ballots", "tally", str(ballots), "--steps", "4"])

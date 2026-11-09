@@ -8,12 +8,17 @@ from dema.sections.catalog import SectionCatalog
 from dema.simulation.ballots import SimulatedBallots
 from dema.simulation.diagnostics import Checkpoint, counting_timeline
 from dema.simulation.generator import BallotGenerator
+from dema.simulation.sampler import ScenarioSampler
+from dema.simulation.scenario import Scenario
 from dema.streaming.publisher import BallotPublisher
 from dema.streaming.stream import BallotStream
 from dema.tallying.memory import InMemoryTallyStore
 from dema.tallying.outcome import Verdict
 from dema.tallying.replay import replay
 from dema.wiring import ACTIVE_KEYS, ACTIVE_SCENARIO, build_signer, open_redis
+
+SAMPLED = "sampled"
+REFERENCE = "reference"
 
 
 def register(commands: Subparsers) -> None:
@@ -24,6 +29,12 @@ def register(commands: Subparsers) -> None:
     simulate.add_argument("catalog", type=Path)
     simulate.add_argument("output", type=Path)
     simulate.add_argument("--seed", type=int, default=2026)
+    simulate.add_argument(
+        "--scenario",
+        choices=(SAMPLED, REFERENCE),
+        default=SAMPLED,
+        help="draw national and regional swings from the seed, or use the reference",
+    )
     simulate.set_defaults(handler=_simulate)
 
     tally = actions.add_parser("tally", help="replay ballots into a tally")
@@ -39,11 +50,22 @@ def register(commands: Subparsers) -> None:
 
 def _simulate(args: argparse.Namespace) -> None:
     catalog = SectionCatalog.from_parquet(args.catalog)
-    ballots = BallotGenerator(ACTIVE_SCENARIO, seed=args.seed).generate(catalog)
+    scenario = _scenario(args.scenario, args.seed)
+    ballots = BallotGenerator(scenario, seed=args.seed).generate(catalog)
     ballots.to_parquet(args.output)
     print(f"ballots: {len(ballots):,}")
     for checkpoint in counting_timeline(ballots):
         print(_format_checkpoint(checkpoint))
+
+
+def _scenario(kind: str, seed: int) -> Scenario:
+    if kind == REFERENCE:
+        return ACTIVE_SCENARIO
+    draw = ScenarioSampler(ACTIVE_SCENARIO).draw(seed)
+    print(f"national strength (seed {seed}):")
+    for candidate in ACTIVE_SCENARIO.election.candidates:
+        print(f"  {candidate.name:<10}{draw.national[candidate.number]:>8.2%}")
+    return draw.scenario
 
 
 def _tally(args: argparse.Namespace) -> None:
