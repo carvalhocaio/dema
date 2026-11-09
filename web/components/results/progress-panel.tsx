@@ -34,32 +34,36 @@ export function ProgressPanel({ progress }: { progress: ProgressData }) {
           </span>
         )}
       </div>
-      <p className="text-5xl font-semibold tracking-tight sm:text-6xl">
-        {formatPercent(progress.ratio)}
-      </p>
-      <Progress
-        value={progress.ratio * 100}
-        aria-label="Seções totalizadas"
-        className="h-2 rounded-sm"
-      />
-      <div className="flex flex-col gap-1 text-sm text-muted-foreground sm:flex-row sm:justify-between sm:gap-4">
-        <p>
-          <CountOf
-            part={progress.counted_sections}
-            whole={progress.total_sections}
-          />{" "}
-          seções
+      <div className="space-y-3 lg:flex lg:items-center lg:gap-8 lg:space-y-0">
+        <p className="text-5xl font-semibold tracking-tight sm:text-6xl lg:min-w-[7ch] lg:shrink-0">
+          {formatPercent(progress.ratio)}
         </p>
-        <p>
-          Eleitorado apurado:{" "}
-          <CountOf
-            part={progress.counted_electorate}
-            whole={progress.total_electorate}
-          />{" "}
-          <span className="whitespace-nowrap">
-            ({formatPercent(electorateRatio)})
-          </span>
-        </p>
+        <div className="min-w-0 flex-1 space-y-3">
+          <Progress
+            value={progress.ratio * 100}
+            aria-label="Seções totalizadas"
+            className="h-2 rounded-sm"
+          />
+          <div className="flex flex-col gap-1 text-sm text-muted-foreground sm:flex-row sm:justify-between sm:gap-4">
+            <p>
+              <CountOf
+                part={progress.counted_sections}
+                whole={progress.total_sections}
+              />{" "}
+              seções
+            </p>
+            <p>
+              Eleitorado apurado:{" "}
+              <CountOf
+                part={progress.counted_electorate}
+                whole={progress.total_electorate}
+              />{" "}
+              <span className="whitespace-nowrap">
+                ({formatPercent(electorateRatio)})
+              </span>
+            </p>
+          </div>
+        </div>
       </div>
     </section>
   )

@@ -23,12 +23,18 @@ export function ResultsBoard({
         palette={palette}
         decision={decision(timeline)}
       />
-      <TimelineSection
-        timeline={timeline}
-        candidates={results.candidates}
-        palette={palette}
-      />
-      <CandidateList results={results} palette={palette} />
+      <div className="grid gap-10 lg:grid-cols-12 lg:gap-x-12">
+        <div className="min-w-0 lg:order-2 lg:col-span-7">
+          <TimelineSection
+            timeline={timeline}
+            candidates={results.candidates}
+            palette={palette}
+          />
+        </div>
+        <div className="min-w-0 lg:order-1 lg:col-span-5">
+          <CandidateList results={results} palette={palette} />
+        </div>
+      </div>
       <VoteBreakdown results={results} />
     </div>
   )

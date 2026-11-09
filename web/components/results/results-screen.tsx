@@ -28,21 +28,25 @@ export function ResultsScreen() {
   const liveStatus = selected?.status === "live" ? report : LIVE_STATUS
 
   return (
-    <main className="mx-auto w-full max-w-[960px] space-y-8 px-4 py-8 tabular-nums sm:px-6 sm:py-12">
-      <ResultsHeader
-        year={report.year ?? DEFAULT_YEAR}
-        round={selected?.round ?? DEFAULT_ROUND}
-      />
-      {status === "unavailable" && (
-        <ApiUnavailableNotice hasData={rounds.length > 0} />
-      )}
-      {selected ? (
-        <Tabs
-          value={String(selected.round)}
-          onValueChange={(value) => select(Number(value))}
-          className="gap-8"
-        >
-          <RoundTabs rounds={rounds} liveStatus={liveStatus} />
+    <main className="mx-auto w-full max-w-screen-2xl px-4 py-8 tabular-nums sm:px-6 sm:py-12 lg:px-10">
+      <Tabs
+        value={selected ? String(selected.round) : ""}
+        onValueChange={(value) => select(Number(value))}
+        className="gap-8"
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <ResultsHeader
+            year={report.year ?? DEFAULT_YEAR}
+            round={selected?.round ?? DEFAULT_ROUND}
+          />
+          <div className="flex items-center justify-between gap-3">
+            <RoundTabs rounds={rounds} liveStatus={liveStatus} />
+          </div>
+        </div>
+        {status === "unavailable" && (
+          <ApiUnavailableNotice hasData={rounds.length > 0} />
+        )}
+        {selected ? (
           <TabsContent value={String(selected.round)}>
             <RoundView
               key={`${selected.round}-${selected.status}`}
@@ -51,12 +55,12 @@ export function ResultsScreen() {
               onReport={onReport}
             />
           </TabsContent>
-        </Tabs>
-      ) : status === "ready" ? (
-        <SetupPendingCard />
-      ) : (
-        <ResultsSkeleton />
-      )}
+        ) : status === "ready" ? (
+          <SetupPendingCard />
+        ) : (
+          <ResultsSkeleton />
+        )}
+      </Tabs>
     </main>
   )
 }

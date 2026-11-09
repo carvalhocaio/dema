@@ -19,6 +19,7 @@ import {
   ChartTooltip,
   type ChartConfig,
 } from "@/components/ui/chart"
+import { DESKTOP_QUERY, useMediaQuery } from "@/hooks/use-media-query"
 import { candidateColor } from "@/lib/candidate-colors"
 import type { Candidate } from "@/lib/results"
 import {
@@ -37,10 +38,18 @@ import {
   type Timeline,
 } from "@/lib/timeline"
 
-const CHART_HEIGHT = 288
+const MOBILE_HEIGHT = 288
+const DESKTOP_HEIGHT = 420
 const MARGIN = { top: 12, right: 60, bottom: 4, left: 4 }
 const X_AXIS_HEIGHT = 24
-const PLOT_HEIGHT = CHART_HEIGHT - MARGIN.top - MARGIN.bottom - X_AXIS_HEIGHT
+
+export function chartHeight(desktop: boolean): number {
+  return desktop ? DESKTOP_HEIGHT : MOBILE_HEIGHT
+}
+
+function plotHeight(height: number): number {
+  return height - MARGIN.top - MARGIN.bottom - X_AXIS_HEIGHT
+}
 
 type Props = {
   timeline: Timeline
@@ -49,6 +58,7 @@ type Props = {
 }
 
 export function TimelineChart({ timeline, candidates, palette }: Props) {
+  const height = chartHeight(useMediaQuery(DESKTOP_QUERY))
   const rows = chartRows(timeline)
   const numbers = candidates.map((candidate) => candidate.number)
   const emphasized = new Set(emphasizedNumbers(timeline.round, candidates))
@@ -60,7 +70,7 @@ export function TimelineChart({ timeline, candidates, palette }: Props) {
       share: rows[rows.length - 1][seriesKey(number)],
     })),
     domain,
-    PLOT_HEIGHT
+    plotHeight(height)
   )
   const config: ChartConfig = Object.fromEntries(
     candidates.map((candidate) => [
@@ -79,7 +89,7 @@ export function TimelineChart({ timeline, candidates, palette }: Props) {
         role="img"
         aria-label={chartSummary(timeline, candidates)}
         className="aspect-auto w-full"
-        style={{ height: CHART_HEIGHT }}
+        style={{ height }}
       >
         <LineChart data={rows} margin={MARGIN} accessibilityLayer>
           <CartesianGrid vertical={false} strokeDasharray="2 4" />

@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { TimelineChart } from "@/components/results/timeline-chart"
+import { chartHeight, TimelineChart } from "@/components/results/timeline-chart"
 import {
   EndLabel,
   TimelineLegend,
@@ -10,6 +10,7 @@ import {
 import { TimelineSection } from "@/components/results/timeline-section"
 import { chartRows } from "@/lib/timeline"
 import { makeResults } from "@/test/fixtures"
+import { stubMatchMedia } from "@/test/media"
 import { makeTimeline } from "@/test/timeline"
 
 const CANDIDATES = makeResults().candidates
@@ -178,5 +179,18 @@ describe("TimelineSection", () => {
     )
 
     expect(screen.getByRole("img")).toBeInTheDocument()
+  })
+})
+
+describe("chart height", () => {
+  it("grows on desktop screens", () => {
+    stubMatchMedia((query) => query === "(min-width: 1024px)")
+
+    const { container } = renderChart()
+
+    expect(chartHeight(false)).toBe(288)
+    expect(
+      container.querySelector<HTMLElement>("[data-slot=chart]")?.style.height
+    ).toBe("420px")
   })
 })

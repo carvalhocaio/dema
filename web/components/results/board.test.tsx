@@ -164,3 +164,20 @@ describe("VerdictBanner with a timeline", () => {
     ).toBeInTheDocument()
   })
 })
+
+describe("ResultsBoard on desktop", () => {
+  it("puts candidates left of the chart while keeping the reading order", () => {
+    render(
+      <ResultsBoard palette={PALETTE} timeline={null} results={makeResults()} />
+    )
+
+    const chart = screen.getByText("Minuto a minuto · % dos votos válidos")
+    const list = screen.getByText("Candidatos · % dos votos válidos")
+    const chartColumn = chart.closest("section")?.parentElement
+    const listColumn = list.closest("section")?.parentElement
+    expect(chartColumn).toHaveClass("lg:order-2", "lg:col-span-7")
+    expect(listColumn).toHaveClass("lg:order-1", "lg:col-span-5")
+    expect(chartColumn?.nextElementSibling).toBe(listColumn)
+    expect(chartColumn?.parentElement).toHaveClass("lg:grid-cols-12")
+  })
+})
