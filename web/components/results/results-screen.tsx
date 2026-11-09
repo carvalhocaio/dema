@@ -40,7 +40,7 @@ export function ResultsScreen() {
             year={report.year ?? DEFAULT_YEAR}
             round={selected?.round ?? DEFAULT_ROUND}
           />
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <RoundTabs rounds={rounds} liveStatus={liveStatus} />
             <ThemeToggle />
           </div>
