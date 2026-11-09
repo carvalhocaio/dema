@@ -79,3 +79,39 @@ def test_reports_missing_signing_key_without_traceback(
     with pytest.raises(SystemExit, match="DEMA_SIGNING_KEY"):
         main(["ballots", "publish", str(ballots)])
     get_settings.cache_clear()
+
+
+def test_derives_and_replays_a_runoff(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    catalog = tmp_path / "sections.parquet"
+    first, second = tmp_path / "r1.parquet", tmp_path / "r2.parquet"
+    main(["sections", "synth", "2000", str(catalog)])
+    main(["ballots", "simulate", str(catalog), str(first), "--seed", "40"])
+    capsys.readouterr()
+
+    main(["ballots", "runoff", str(first), str(second), "--seed", "40"])
+    output = capsys.readouterr().out
+    main(["ballots", "tally", str(second), "--round", "2", "--steps", "2"])
+    replay = capsys.readouterr().out
+
+    assert second.exists()
+    assert "runoff: Keons x Lisden (seed 40)" in output
+    assert "ballots: 2,000" in output
+    assert ">> elected at" in replay
+
+
+def test_refuses_a_runoff_after_a_first_round_win(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    catalog = tmp_path / "sections.parquet"
+    first = tmp_path / "r1.parquet"
+    main(["sections", "synth", "500", str(catalog)])
+    main(["ballots", "simulate", str(catalog), str(first), "--seed", "3"])
+
+    with pytest.raises(SystemExit) as raised:
+        main(["ballots", "runoff", str(first), str(tmp_path / "r2.parquet")])
+
+    assert str(raised.value) == (
+        "dema: Keons was elected in the first round; there is no runoff"
+    )

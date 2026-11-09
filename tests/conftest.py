@@ -87,7 +87,9 @@ def small_ballots(small_catalog: SectionCatalog) -> list[Ballot]:
 def seeded(
     migrated: psycopg.Connection, small_catalog: SectionCatalog
 ) -> psycopg.Connection:
-    seed_election(migrated, DEMA_2026_FIRST_ROUND)
+    seed_election(
+        migrated, DEMA_2026_FIRST_ROUND.election, DEMA_2026_FIRST_ROUND.polls_close
+    )
     replace_sections(migrated, small_catalog)
     return migrated
 

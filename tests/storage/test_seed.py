@@ -8,6 +8,8 @@ from dema.storage.seed import clear_ballots, replace_sections, seed_election
 
 pytestmark = pytest.mark.integration
 
+ELECTION = DEMA_2026_FIRST_ROUND.election
+
 
 def scalar(connection: psycopg.Connection, query: str) -> object:
     row = connection.execute(query.encode()).fetchone()
@@ -15,8 +17,8 @@ def scalar(connection: psycopg.Connection, query: str) -> object:
 
 
 def test_seeds_election_idempotently(migrated: psycopg.Connection) -> None:
-    seed_election(migrated, DEMA_2026_FIRST_ROUND)
-    seed_election(migrated, DEMA_2026_FIRST_ROUND)
+    seed_election(migrated, ELECTION, DEMA_2026_FIRST_ROUND.polls_close)
+    seed_election(migrated, ELECTION, DEMA_2026_FIRST_ROUND.polls_close)
 
     assert scalar(migrated, "SELECT count(*) FROM elections") == 1
     assert scalar(migrated, "SELECT count(*) FROM candidates") == 5
@@ -52,6 +54,6 @@ def test_clears_election_ballots(seeded: psycopg.Connection) -> None:
         (section,),
     )
 
-    clear_ballots(seeded, DEMA_2026_FIRST_ROUND)
+    clear_ballots(seeded, ELECTION)
 
     assert scalar(seeded, "SELECT count(*) FROM ballots") == 0

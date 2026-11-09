@@ -21,18 +21,13 @@ class BallotGenerator:
     def generate(self, catalog: SectionCatalog) -> SimulatedBallots:
         rng = np.random.default_rng(self._seed)
         frame = catalog.frame
-        region = (
-            frame["state"]
-            .cast(pl.String)
-            .replace_strict(REGION_INDEX, return_dtype=pl.UInt8)
-            .to_numpy()
-        )
+        region = region_codes(frame)
         counts = rng.multinomial(
             self._draw_turnout(rng, region, frame["eligible_voters"].to_numpy()),
             self._draw_vote_probabilities(rng, region),
         ).astype(np.int32)
         votes = {votes_column(n): counts[:, i] for i, n in enumerate(self._numbers)}
-        delay_ms = self._draw_release_delay_ms(rng, region)
+        delay_ms = draw_release_delay_ms(rng, self._scenario, region)
         return SimulatedBallots(
             frame.select(*KEY_COLUMNS, "eligible_voters").with_columns(
                 **votes,
@@ -73,14 +68,30 @@ class BallotGenerator:
             )
         )
 
-    def _draw_release_delay_ms(
-        self, rng: np.random.Generator, region: np.ndarray
-    ) -> np.ndarray:
-        mean = self._per_region(
-            lambda profile: profile.release_delay.total_seconds() * 1000
-        )[region]
-        shape = self._scenario.release_shape
-        return np.rint(rng.gamma(shape, mean / shape)).astype(np.int64)
-
     def _per_region(self, attribute: Callable[[RegionalProfile], float]) -> np.ndarray:
-        return np.array([attribute(self._scenario.profiles[r]) for r in REGIONS])
+        return per_region(self._scenario, attribute)
+
+
+def region_codes(frame: pl.DataFrame) -> np.ndarray:
+    return (
+        frame["state"]
+        .cast(pl.String)
+        .replace_strict(REGION_INDEX, return_dtype=pl.UInt8)
+        .to_numpy()
+    )
+
+
+def per_region(
+    scenario: Scenario, attribute: Callable[[RegionalProfile], float]
+) -> np.ndarray:
+    return np.array([attribute(scenario.profiles[r]) for r in REGIONS])
+
+
+def draw_release_delay_ms(
+    rng: np.random.Generator, scenario: Scenario, region: np.ndarray
+) -> np.ndarray:
+    mean = per_region(
+        scenario, lambda profile: profile.release_delay.total_seconds() * 1000
+    )[region]
+    shape = scenario.release_shape
+    return np.rint(rng.gamma(shape, mean / shape)).astype(np.int64)

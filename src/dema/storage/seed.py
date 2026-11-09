@@ -1,19 +1,22 @@
+from datetime import datetime
+
 import psycopg
 
+from dema.domain.election import Election
 from dema.sections.catalog import SectionCatalog
-from dema.simulation.scenario import Scenario
 
 SECTION_COLUMNS = ("state", "municipality_code", "zone", "number", "eligible_voters")
 
 
-def seed_election(connection: psycopg.Connection, scenario: Scenario) -> None:
-    election = scenario.election
+def seed_election(
+    connection: psycopg.Connection, election: Election, polls_close: datetime
+) -> None:
     with connection.transaction():
         connection.execute(
             "INSERT INTO elections (year, round, polls_close) VALUES (%s, %s, %s) "
             "ON CONFLICT (year, round) "
             "DO UPDATE SET polls_close = EXCLUDED.polls_close",
-            (election.year, election.round, scenario.polls_close),
+            (election.year, election.round, polls_close),
         )
         with connection.cursor() as cursor:
             cursor.executemany(
@@ -61,8 +64,7 @@ def replace_sections(connection: psycopg.Connection, catalog: SectionCatalog) ->
         )
 
 
-def clear_ballots(connection: psycopg.Connection, scenario: Scenario) -> None:
-    election = scenario.election
+def clear_ballots(connection: psycopg.Connection, election: Election) -> None:
     with connection.transaction():
         connection.execute(
             "DELETE FROM ballots WHERE year = %s AND round = %s",

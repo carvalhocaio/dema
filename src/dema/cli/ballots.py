@@ -9,6 +9,7 @@ from dema.sections.catalog import SectionCatalog
 from dema.simulation.ballots import SimulatedBallots
 from dema.simulation.diagnostics import Checkpoint, counting_timeline
 from dema.simulation.generator import BallotGenerator
+from dema.simulation.runoff import RunoffGenerator
 from dema.simulation.sampler import ScenarioSampler
 from dema.simulation.scenario import Scenario
 from dema.streaming.publisher import BallotPublisher
@@ -49,6 +50,12 @@ def register(commands: Subparsers) -> None:
     tally.add_argument("--steps", type=int, default=10)
     tally.add_argument("--round", type=int, choices=[1, 2], default=1)
     tally.set_defaults(handler=_tally)
+
+    runoff = actions.add_parser("runoff", help="derive second-round ballots")
+    runoff.add_argument("first_round", type=Path)
+    runoff.add_argument("output", type=Path)
+    runoff.add_argument("--seed", type=int, default=2026)
+    runoff.set_defaults(handler=_runoff)
 
     publish = actions.add_parser("publish", help="stream signed ballots to Redis")
     publish.add_argument("ballots", type=Path)
@@ -94,6 +101,21 @@ def _tally(args: argparse.Namespace) -> None:
         if frame.tally.progress >= next_step / args.steps:
             next_step += 1
             print(f"  {frame.tally.progress:6.1%}  {format_leaders(frame.outcome)}")
+
+
+def _runoff(args: argparse.Namespace) -> None:
+    first_round = SimulatedBallots.from_parquet(args.first_round)
+    election = ballots_election(first_round, ElectionRound.FIRST)
+    runoff = RunoffGenerator(REFERENCE_SCENARIO, seed=args.seed).generate(
+        first_round, election
+    )
+    runoff.ballots.to_parquet(args.output)
+    first, second = runoff.election.candidates
+    print(f"first round: {format_leaders(runoff.first_round)}  [runoff]")
+    print(f"runoff: {first.name} x {second.name} (seed {args.seed})")
+    print(f"ballots: {len(runoff.ballots):,}")
+    for checkpoint in counting_timeline(runoff.ballots):
+        print(_format_checkpoint(checkpoint))
 
 
 def _publish(args: argparse.Namespace) -> None:
