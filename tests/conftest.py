@@ -36,7 +36,7 @@ def admin_url() -> str:
     try:
         psycopg.connect(url, connect_timeout=2).close()
     except psycopg.OperationalError:
-        pytest.skip("Postgres is not reachable; run `make up`")
+        unavailable("Postgres")
     return url
 
 
@@ -102,7 +102,7 @@ def redis_url() -> str:
     try:
         redis.Redis.from_url(url.geturl(), socket_connect_timeout=2).ping()
     except redis.ConnectionError:
-        pytest.skip("Redis is not reachable; run `make up`")
+        unavailable("Redis")
     return url.geturl()
 
 
