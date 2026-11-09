@@ -39,6 +39,7 @@ export type BreakdownItem = {
   label: string
   value: number
   share: number
+  basis: string
 }
 
 const LOCALE = "pt-BR"
@@ -100,6 +101,9 @@ export function roundLabel(round: number): string {
   return `${round}º turno`
 }
 
+const OF_TURNOUT = "do comparecimento"
+const OF_COUNTED_ELECTORATE = "do eleitorado apurado"
+
 export function voteBreakdown(results: Results): BreakdownItem[] {
   const { votes, progress } = results
   return [
@@ -107,26 +111,31 @@ export function voteBreakdown(results: Results): BreakdownItem[] {
       label: "Válidos",
       value: votes.valid,
       share: ratio(votes.valid, votes.turnout),
+      basis: OF_TURNOUT,
     },
     {
       label: "Brancos",
       value: votes.blank,
       share: ratio(votes.blank, votes.turnout),
+      basis: OF_TURNOUT,
     },
     {
       label: "Nulos",
       value: votes.null,
       share: ratio(votes.null, votes.turnout),
+      basis: OF_TURNOUT,
     },
     {
       label: "Comparecimento",
       value: votes.turnout,
       share: ratio(votes.turnout, progress.counted_electorate),
+      basis: OF_COUNTED_ELECTORATE,
     },
     {
       label: "Abstenção",
       value: votes.abstentions,
       share: ratio(votes.abstentions, progress.counted_electorate),
+      basis: OF_COUNTED_ELECTORATE,
     },
   ]
 }

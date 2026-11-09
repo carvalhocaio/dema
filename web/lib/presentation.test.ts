@@ -20,6 +20,14 @@ describe("candidateColor", () => {
     expect(candidateColor(reranked, 27)).toBe("var(--candidate-2)")
     expect(candidateColor(ranked, 12)).toBe("var(--candidate-1)")
   })
+
+  it("falls back to a neutral color beyond the palette", () => {
+    const many = [1, 2, 3, 4, 5, 6, 7, 8].map(candidate)
+    expect(candidateColor(many, 6)).toBe("var(--candidate-6)")
+    expect(candidateColor(many, 7)).toBe("var(--candidate-other)")
+    expect(candidateColor(many, 8)).toBe("var(--candidate-other)")
+    expect(candidateColor(many, 99)).toBe("var(--candidate-other)")
+  })
 })
 
 describe("connectionStatus", () => {

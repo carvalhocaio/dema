@@ -135,4 +135,17 @@ describe("voteBreakdown", () => {
       Abstenção: 0.2,
     })
   })
+
+  it("names the base of each percentage", () => {
+    const bases = Object.fromEntries(
+      voteBreakdown(makeResults()).map((item) => [item.label, item.basis])
+    )
+    expect(bases).toEqual({
+      Válidos: "do comparecimento",
+      Brancos: "do comparecimento",
+      Nulos: "do comparecimento",
+      Comparecimento: "do eleitorado apurado",
+      Abstenção: "do eleitorado apurado",
+    })
+  })
 })

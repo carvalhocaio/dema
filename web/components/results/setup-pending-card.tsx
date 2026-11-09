@@ -17,7 +17,7 @@ export function SetupPendingCard() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <pre className="overflow-x-auto rounded-md bg-muted px-3 py-2 font-mono text-sm">
+        <pre className="rounded-md bg-muted px-3 py-2 font-mono text-xs break-all whitespace-pre-wrap sm:text-sm">
           <code>uv run dema election setup &lt;catalog&gt;</code>
         </pre>
       </CardContent>
