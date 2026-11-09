@@ -1,4 +1,6 @@
+import os
 from collections.abc import AsyncIterator, Iterator
+from typing import NoReturn
 from urllib.parse import urlsplit
 
 import psycopg
@@ -19,6 +21,13 @@ from dema.storage.seed import replace_sections, seed_election
 
 TEST_DATABASE = "dema_test"
 TEST_REDIS_DB = 15
+
+
+def unavailable(service: str) -> NoReturn:
+    message = f"{service} is not reachable; run `make up`"
+    if os.environ.get("CI"):
+        pytest.fail(message)
+    pytest.skip(message)
 
 
 @pytest.fixture(scope="session")
