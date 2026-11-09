@@ -1,4 +1,4 @@
-.PHONY: help sync install hooks hooks-run test lint lint-fix format format-check typecheck audit ci check clean up down migrate
+.PHONY: help sync install hooks hooks-run test lint lint-fix format format-check typecheck audit ci check clean up down migrate web-install web-dev web-check
 
 help: ## Lists all available Makefile commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -51,3 +51,15 @@ down: ## Stops Postgres and Redis keeping their volumes
 
 migrate: ## Applies pending database migrations
 	uv run dema db migrate
+
+web-install: ## Installs the web app dependencies with npm
+	npm --prefix web ci
+
+web-dev: ## Starts the web app dev server on http://localhost:3000
+	npm --prefix web run dev
+
+web-check: ## Runs web lint, typecheck, tests and production build
+	npm --prefix web run lint
+	npm --prefix web run typecheck
+	npm --prefix web test
+	npm --prefix web run build
