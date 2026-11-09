@@ -70,7 +70,9 @@ describe("RoundView", () => {
       await screen.findByText("2º turno: Keons × Nico")
     ).toBeInTheDocument()
     expect(
-      await screen.findByText(/definido às 17:30, com 60,00%/)
+      await screen.findByText(
+        /definido com 60,00% das seções totalizadas, após 30 min/
+      )
     ).toBeInTheDocument()
     await waitFor(() =>
       expect(onReport).toHaveBeenLastCalledWith({

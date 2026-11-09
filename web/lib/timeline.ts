@@ -14,36 +14,44 @@ export type Timeline = {
   decided_at: string | null
 }
 
-export type ChartRow = { at: number; progress: number } & Record<string, number>
+export type ChartRow = { progress: number; elapsed: number } & Record<
+  string,
+  number
+>
 
-export const TIME_ZONE = "America/Sao_Paulo"
+export type Decision = { progress: number; elapsed: number }
+
+export type DecisionLabelPosition = "insideTopLeft" | "insideTopRight"
+
 export const MAJORITY = 0.5
+export const PROGRESS_TICKS = [0, 0.25, 0.5, 0.75, 1]
 
 const Y_STEP = 0.05
 const Y_PADDING = 0.02
 const MAX_Y_TICKS = 8
-const CLOCK_STEPS_MINUTES = [15, 30, 60, 120, 180, 360]
-const MAX_CLOCK_TICKS = 6
 const MINUTE_MS = 60_000
-
-const clockFormat = new Intl.DateTimeFormat("pt-BR", {
-  hour: "2-digit",
-  minute: "2-digit",
-  hourCycle: "h23",
-  timeZone: TIME_ZONE,
-})
+const LABEL_FLIP_PROGRESS = 0.7
 
 const percentTickFormat = new Intl.NumberFormat("pt-BR", {
   style: "percent",
   maximumFractionDigits: 0,
 })
 
-export function formatClock(epochMs: number): string {
-  return clockFormat.format(epochMs)
-}
+const oneDecimalPercent = new Intl.NumberFormat("pt-BR", {
+  style: "percent",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 1,
+})
 
 export function formatPercentTick(fraction: number): string {
   return percentTickFormat.format(fraction)
+}
+
+export function formatElapsed(ms: number): string {
+  const minutes = Math.round(ms / MINUTE_MS)
+  if (minutes < 60) return `${minutes} min`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}h${String(minutes % 60).padStart(2, "0")}`
 }
 
 export function seriesKey(number: number): string {
@@ -51,8 +59,12 @@ export function seriesKey(number: number): string {
 }
 
 export function chartRows(timeline: Timeline): ChartRow[] {
+  const start = Date.parse(timeline.points[0]?.at ?? "")
   return timeline.points.map((point) => {
-    const row: ChartRow = { at: Date.parse(point.at), progress: point.progress }
+    const row: ChartRow = {
+      progress: point.progress,
+      elapsed: Date.parse(point.at) - start,
+    }
     for (const [number, share] of Object.entries(point.shares)) {
       row[seriesKey(Number(number))] = share
     }
@@ -87,19 +99,6 @@ export function yTicks([low, high]: readonly [number, number]): number[] {
   return ticks
 }
 
-export function clockTicks(start: number, end: number): number[] {
-  const span = (end - start) / MINUTE_MS
-  const minutes =
-    CLOCK_STEPS_MINUTES.find((step) => span / step < MAX_CLOCK_TICKS) ??
-    CLOCK_STEPS_MINUTES[CLOCK_STEPS_MINUTES.length - 1]
-  const step = minutes * MINUTE_MS
-  const ticks: number[] = []
-  for (let tick = Math.ceil(start / step) * step; tick <= end; tick += step) {
-    ticks.push(tick)
-  }
-  return ticks
-}
-
 export function emphasizedNumbers(
   round: number,
   candidates: readonly Candidate[]
@@ -125,7 +124,21 @@ export function leadSince(
   while (since > 0 && leaderOf(rows[since - 1], candidates) === leader) {
     since -= 1
   }
-  return { leader, since: rows[since].at }
+  return { leader, since: rows[since].progress }
+}
+
+export function decision(timeline: Timeline | null): Decision | null {
+  if (!timeline?.decided_at) return null
+  const index = timeline.points.findIndex(
+    (point) => point.at === timeline.decided_at
+  )
+  if (index < 0) return null
+  const row = chartRows(timeline)[index]
+  return { progress: row.progress, elapsed: row.elapsed }
+}
+
+export function decisionLabelPosition(progress: number): DecisionLabelPosition {
+  return progress > LABEL_FLIP_PROGRESS ? "insideTopRight" : "insideTopLeft"
 }
 
 export function chartSummary(
@@ -138,10 +151,11 @@ export function chartSummary(
   }
   const { leader, since } = leadSince(rows, candidates)
   const share = formatPercent(rows[rows.length - 1][seriesKey(leader.number)])
-  const decided = timeline.decided_at
-    ? `resultado matematicamente definido às ${formatClock(Date.parse(timeline.decided_at))}`
+  const decided = decision(timeline)
+  const outcome = decided
+    ? `resultado matematicamente definido com ${oneDecimalPercent.format(decided.progress)} das seções`
     : "resultado ainda não definido"
-  return `Minuto a minuto: ${leader.name} lidera com ${share} dos votos válidos desde ${formatClock(since)}; ${decided}.`
+  return `Minuto a minuto: ${leader.name} lidera com ${share} dos votos válidos desde ${oneDecimalPercent.format(since)} das seções; ${outcome}.`
 }
 
 export function labelOffsets(
@@ -161,12 +175,4 @@ export function labelOffsets(
     previous = placed
   }
   return offsets
-}
-
-export function decisionPoint(timeline: Timeline | null): TimelinePoint | null {
-  if (!timeline?.decided_at) return null
-  const decidedAt = Date.parse(timeline.decided_at)
-  return (
-    timeline.points.find((point) => Date.parse(point.at) === decidedAt) ?? null
-  )
 }

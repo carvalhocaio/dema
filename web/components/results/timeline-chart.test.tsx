@@ -37,7 +37,7 @@ describe("TimelineChart", () => {
     renderChart()
 
     expect(screen.getByRole("img")).toHaveAccessibleName(
-      /Keons lidera com 50,00% dos votos válidos desde 17:30/
+      /Keons lidera com 50,00% dos votos válidos desde 60% das seções/
     )
   })
 
@@ -109,7 +109,9 @@ describe("TimelineTooltip", () => {
       />
     )
 
-    expect(screen.getByText("17:00 · 10,00% das seções")).toBeInTheDocument()
+    expect(
+      screen.getByText("10,00% das seções · 0 min de apuração")
+    ).toBeInTheDocument()
     expect(
       screen.getAllByRole("listitem").map((item) => item.textContent)
     ).toEqual(["Nico50,00%", "Keons40,00%", "Lisden10,00%"])

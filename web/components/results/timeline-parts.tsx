@@ -1,7 +1,7 @@
 import { CandidateMarker } from "@/components/results/candidate-marker"
 import { candidateColor } from "@/lib/candidate-colors"
 import { formatPercent, type Candidate } from "@/lib/results"
-import { formatClock, seriesKey, type ChartRow } from "@/lib/timeline"
+import { formatElapsed, seriesKey, type ChartRow } from "@/lib/timeline"
 import { cn } from "@/lib/utils"
 
 type EndLabelProps = {
@@ -60,7 +60,8 @@ export function TimelineTooltip({
   return (
     <div className="min-w-44 rounded-md border bg-background px-3 py-2 text-xs tabular-nums shadow-sm">
       <p className="font-medium">
-        {formatClock(row.at)} · {formatPercent(row.progress)} das seções
+        {formatPercent(row.progress)} das seções · {formatElapsed(row.elapsed)}{" "}
+        de apuração
       </p>
       <ul className="mt-1.5 space-y-1">
         {ranked.map((candidate) => (

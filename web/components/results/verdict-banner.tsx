@@ -6,7 +6,7 @@ import {
   verdictLabel,
   type Results,
 } from "@/lib/results"
-import { formatClock, type TimelinePoint } from "@/lib/timeline"
+import { formatElapsed, type Decision } from "@/lib/timeline"
 
 export function VerdictBanner({
   results,
@@ -15,7 +15,7 @@ export function VerdictBanner({
 }: {
   results: Results
   palette: readonly number[]
-  decision: TimelinePoint | null
+  decision: Decision | null
 }) {
   const label = verdictLabel(results)
   if (!label) return null
@@ -41,7 +41,7 @@ export function VerdictBanner({
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
         {decision
-          ? `Matematicamente definido às ${formatClock(Date.parse(decision.at))}, com ${formatPercent(decision.progress)} das seções totalizadas.`
+          ? `Matematicamente definido com ${formatPercent(decision.progress)} das seções totalizadas, após ${formatElapsed(decision.elapsed)} de apuração.`
           : `Matematicamente definido com ${formatPercent(results.progress.ratio)} das seções totalizadas.`}
       </p>
     </section>

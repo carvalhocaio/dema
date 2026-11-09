@@ -3,13 +3,14 @@ import { describe, expect, it } from "vitest"
 import {
   chartRows,
   chartSummary,
-  clockTicks,
-  decisionPoint,
+  decision,
+  decisionLabelPosition,
   emphasizedNumbers,
-  formatClock,
+  formatElapsed,
   formatPercentTick,
   labelOffsets,
   leadSince,
+  PROGRESS_TICKS,
   seriesKey,
   yDomain,
   yTicks,
@@ -19,33 +20,51 @@ import { makeTimeline, point } from "@/test/timeline"
 
 const CANDIDATES = makeResults().candidates
 const MINUTE = 60_000
-const START = Date.parse("2026-10-04T20:00:00Z")
 
 describe("formatPercentTick", () => {
-  it("shows whole percentages on the axis", () => {
+  it("shows whole percentages on both axes", () => {
     expect(formatPercentTick(0.45)).toBe("45%")
+    expect(PROGRESS_TICKS.map(formatPercentTick)).toEqual([
+      "0%",
+      "25%",
+      "50%",
+      "75%",
+      "100%",
+    ])
   })
 })
 
-describe("formatClock", () => {
-  it("shows Brasília time", () => {
-    expect(formatClock(START)).toBe("17:00")
-    expect(formatClock(Date.parse("2026-10-05T03:05:00Z"))).toBe("00:05")
+describe("formatElapsed", () => {
+  it("counts minutes, then hours and minutes", () => {
+    expect(formatElapsed(0)).toBe("0 min")
+    expect(formatElapsed(12 * MINUTE)).toBe("12 min")
+    expect(formatElapsed(59.6 * MINUTE)).toBe("1h00")
+    expect(formatElapsed(72 * MINUTE)).toBe("1h12")
+    expect(formatElapsed(141 * MINUTE)).toBe("2h21")
   })
 })
 
 describe("chartRows", () => {
-  it("turns points into rows keyed by series", () => {
-    const [first] = chartRows(makeTimeline())
+  it("keys shares by series and measures time since the first ballots", () => {
+    const rows = chartRows(makeTimeline())
 
-    expect(first).toEqual({
-      at: START,
+    expect(rows[0]).toEqual({
       progress: 0.1,
+      elapsed: 0,
       c27: 0.4,
       c99: 0.5,
       c31: 0.1,
     })
+    expect(rows.map((row) => row.elapsed)).toEqual([
+      0,
+      30 * MINUTE,
+      60 * MINUTE,
+    ])
     expect(seriesKey(27)).toBe("c27")
+  })
+
+  it("is empty before any point", () => {
+    expect(chartRows(makeTimeline({ points: [] }))).toEqual([])
   })
 })
 
@@ -59,38 +78,13 @@ describe("yDomain and yTicks", () => {
 
   it("stays within 0 and 100% and thins out wide ranges", () => {
     const rows = chartRows(makeTimeline())
+    const landslide = makeTimeline({
+      points: [point("2026-10-04T20:00:00Z", { "27": 0.99, "99": 0.0 })],
+    })
 
     expect(yDomain(rows, [27, 99, 31])).toEqual([0.05, 0.55])
-    expect(
-      yDomain(
-        chartRows(
-          makeTimeline({
-            points: [point("2026-10-04T20:00:00Z", { "27": 0.99, "99": 0.0 })],
-          })
-        ),
-        [27, 99]
-      )
-    ).toEqual([0, 1])
+    expect(yDomain(chartRows(landslide), [27, 99])).toEqual([0, 1])
     expect(yTicks([0.05, 0.55])).toEqual([0.1, 0.2, 0.3, 0.4, 0.5])
-  })
-})
-
-describe("clockTicks", () => {
-  it("picks the finest step that keeps the axis readable", () => {
-    expect(clockTicks(START, START + 60 * MINUTE)).toEqual([
-      START,
-      START + 15 * MINUTE,
-      START + 30 * MINUTE,
-      START + 45 * MINUTE,
-      START + 60 * MINUTE,
-    ])
-    expect(clockTicks(START + MINUTE, START + 9 * 60 * MINUTE)).toHaveLength(4)
-  })
-
-  it("caps very long counts at the widest step", () => {
-    const ticks = clockTicks(START, START + 72 * 60 * MINUTE)
-
-    expect(ticks[1] - ticks[0]).toBe(360 * MINUTE)
   })
 })
 
@@ -100,26 +94,46 @@ describe("emphasis and leadership", () => {
     expect(emphasizedNumbers(2, CANDIDATES)).toEqual([27, 99, 31])
   })
 
-  it("finds when the current leader took the lead", () => {
-    const rows = chartRows(makeTimeline())
-
-    const { leader, since } = leadSince(rows, CANDIDATES)
+  it("finds the share of sections when the current leader took the lead", () => {
+    const { leader, since } = leadSince(chartRows(makeTimeline()), CANDIDATES)
 
     expect(leader.number).toBe(27)
-    expect(since).toBe(START + 30 * MINUTE)
+    expect(since).toBe(0.6)
   })
 
   it("dates a lead held from the first minute to that minute", () => {
     const rows = chartRows(makeTimeline()).slice(0, 1)
 
-    expect(leadSince(rows, CANDIDATES)).toMatchObject({ since: START })
+    expect(leadSince(rows, CANDIDATES)).toMatchObject({ since: 0.1 })
+  })
+})
+
+describe("decision", () => {
+  it("locates the minute the verdict was secured", () => {
+    expect(decision(makeTimeline())).toEqual({
+      progress: 0.6,
+      elapsed: 30 * MINUTE,
+    })
+  })
+
+  it("is empty without a timeline, a decision or a matching point", () => {
+    expect(decision(null)).toBeNull()
+    expect(decision(makeTimeline({ decided_at: null }))).toBeNull()
+    expect(
+      decision(makeTimeline({ decided_at: "2026-10-04T23:00:00Z" }))
+    ).toBeNull()
+  })
+
+  it("keeps the label clear of the end labels late in the count", () => {
+    expect(decisionLabelPosition(0.6)).toBe("insideTopLeft")
+    expect(decisionLabelPosition(0.95)).toBe("insideTopRight")
   })
 })
 
 describe("chartSummary", () => {
-  it("describes the leader, since when and the decision time", () => {
+  it("describes the leader, since when and the decision", () => {
     expect(chartSummary(makeTimeline(), CANDIDATES)).toBe(
-      "Minuto a minuto: Keons lidera com 50,00% dos votos válidos desde 17:30; resultado matematicamente definido às 17:30."
+      "Minuto a minuto: Keons lidera com 50,00% dos votos válidos desde 60% das seções; resultado matematicamente definido com 60% das seções."
     )
   })
 
@@ -152,19 +166,5 @@ describe("labelOffsets", () => {
     expect(offsets.get(27)).toBe(0)
     expect(offsets.get(99)).toBeCloseTo(12)
     expect(offsets.get(31)).toBe(0)
-  })
-})
-
-describe("decisionPoint", () => {
-  it("returns the point where the verdict was secured", () => {
-    expect(decisionPoint(makeTimeline())?.progress).toBe(0.6)
-  })
-
-  it("is empty without a timeline, a decision or a matching point", () => {
-    expect(decisionPoint(null)).toBeNull()
-    expect(decisionPoint(makeTimeline({ decided_at: null }))).toBeNull()
-    expect(
-      decisionPoint(makeTimeline({ decided_at: "2026-10-04T23:00:00Z" }))
-    ).toBeNull()
   })
 })

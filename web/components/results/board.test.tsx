@@ -152,19 +152,14 @@ describe("VerdictBanner with a timeline", () => {
     render(
       <VerdictBanner
         palette={PALETTE}
-        decision={{
-          at: "2026-10-04T22:21:00Z",
-          progress: 0.4312,
-          shares: {},
-          verdict: "runoff",
-        }}
+        decision={{ progress: 0.4312, elapsed: 141 * 60_000 }}
         results={makeResults({ verdict: "runoff", finalists: [27, 99] })}
       />
     )
 
     expect(
       screen.getByText(
-        "Matematicamente definido às 19:21, com 43,12% das seções totalizadas."
+        "Matematicamente definido com 43,12% das seções totalizadas, após 2h21 de apuração."
       )
     ).toBeInTheDocument()
   })

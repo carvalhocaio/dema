@@ -4,7 +4,7 @@ import { TimelineSection } from "@/components/results/timeline-section"
 import { VerdictBanner } from "@/components/results/verdict-banner"
 import { VoteBreakdown } from "@/components/results/vote-breakdown"
 import type { Results } from "@/lib/results"
-import { decisionPoint, type Timeline } from "@/lib/timeline"
+import { decision, type Timeline } from "@/lib/timeline"
 
 export function ResultsBoard({
   results,
@@ -21,7 +21,7 @@ export function ResultsBoard({
       <VerdictBanner
         results={results}
         palette={palette}
-        decision={decisionPoint(timeline)}
+        decision={decision(timeline)}
       />
       <TimelineSection
         timeline={timeline}

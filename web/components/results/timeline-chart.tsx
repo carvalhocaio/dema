@@ -24,12 +24,13 @@ import type { Candidate } from "@/lib/results"
 import {
   chartRows,
   chartSummary,
-  clockTicks,
+  decision,
+  decisionLabelPosition,
   emphasizedNumbers,
-  formatClock,
   formatPercentTick,
   labelOffsets,
   MAJORITY,
+  PROGRESS_TICKS,
   seriesKey,
   yDomain,
   yTicks,
@@ -52,9 +53,7 @@ export function TimelineChart({ timeline, candidates, palette }: Props) {
   const numbers = candidates.map((candidate) => candidate.number)
   const emphasized = new Set(emphasizedNumbers(timeline.round, candidates))
   const domain = yDomain(rows, numbers)
-  const first = rows[0].at
-  const last = rows[rows.length - 1].at
-  const decidedAt = timeline.decided_at ? Date.parse(timeline.decided_at) : null
+  const decided = decision(timeline)
   const offsets = labelOffsets(
     [...emphasized].map((number) => ({
       number,
@@ -85,12 +84,11 @@ export function TimelineChart({ timeline, candidates, palette }: Props) {
         <LineChart data={rows} margin={MARGIN} accessibilityLayer>
           <CartesianGrid vertical={false} strokeDasharray="2 4" />
           <XAxis
-            dataKey="at"
+            dataKey="progress"
             type="number"
-            scale="time"
-            domain={[first, last]}
-            ticks={clockTicks(first, last)}
-            tickFormatter={formatClock}
+            domain={[0, 1]}
+            ticks={PROGRESS_TICKS}
+            tickFormatter={formatPercentTick}
             tickLine={false}
             axisLine={false}
             height={X_AXIS_HEIGHT}
@@ -108,14 +106,14 @@ export function TimelineChart({ timeline, candidates, palette }: Props) {
             stroke="var(--muted-foreground)"
             strokeOpacity={0.7}
           />
-          {decidedAt !== null && (
+          {decided && (
             <ReferenceLine
-              x={decidedAt}
+              x={decided.progress}
               stroke="var(--foreground)"
               strokeDasharray="3 3"
               label={{
                 value: "Mat. definido",
-                position: "insideTopLeft",
+                position: decisionLabelPosition(decided.progress),
                 fill: "var(--muted-foreground)",
                 fontSize: 11,
               }}
