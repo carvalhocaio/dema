@@ -1,4 +1,4 @@
-import { act, screen, within } from "@testing-library/react"
+import { act, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -7,6 +7,7 @@ import { FakeEventSource } from "@/test/event-source"
 import { respond, routeFetch } from "@/test/fetch"
 import { makeResults } from "@/test/fixtures"
 import { renderWithProviders } from "@/test/render"
+import { makeReplay } from "@/test/replay"
 import { makeTimeline } from "@/test/timeline"
 
 const FIRST_ROUND = makeResults({ verdict: "runoff", finalists: [27, 99] })
@@ -141,5 +142,38 @@ describe("ResultsScreen while rounds are still connecting", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
       "Apuração · Eleição 2026"
     )
+  })
+})
+
+describe("ResultsScreen during a replay", () => {
+  it("shows the replay badge on the selected tab and keeps the live one quiet", async () => {
+    window.history.replaceState(null, "", "/?turno=1")
+    const final = makeResults({
+      verdict: "runoff",
+      finalists: [27, 99],
+      progress: { ...makeResults().progress, ratio: 1, is_complete: true },
+    })
+    routeFetch({
+      "/rounds": () =>
+        respond(200, [
+          { round: 1, status: "final" },
+          { round: 2, status: "live" },
+        ]),
+      "/rounds/1/results": () => respond(200, final),
+      "/rounds/1/timeline": () => respond(200, makeTimeline()),
+      "/rounds/1/replay": () => respond(200, makeReplay()),
+    })
+    renderWithProviders(<ResultsScreen />)
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Rever apuração" })
+    )
+
+    const first = screen.getByRole("tab", { name: /1º turno/ })
+    await waitFor(() =>
+      expect(within(first).getByRole("status")).toHaveTextContent("Replay")
+    )
+    const second = screen.getByRole("tab", { name: /2º turno/ })
+    expect(within(second).getByRole("status")).toHaveTextContent("Ao vivo")
   })
 })

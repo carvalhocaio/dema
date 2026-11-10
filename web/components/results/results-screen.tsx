@@ -13,6 +13,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useRounds } from "@/hooks/use-rounds"
 import { useSelectedRound } from "@/hooks/use-selected-round"
 import { LIVE_STATUS, sameReport } from "@/lib/connection"
+import { REPLAY_STATUS } from "@/lib/replay"
 import { findRound } from "@/lib/rounds"
 
 const DEFAULT_YEAR = 2026
@@ -26,7 +27,9 @@ export function ResultsScreen() {
   const onReport = useCallback((next: RoundReport) => {
     setReport((previous) => (sameReport(previous, next) ? previous : next))
   }, [])
-  const liveStatus = selected?.status === "live" ? report : LIVE_STATUS
+  const replaying = report.label === REPLAY_STATUS.label
+  const liveStatus =
+    selected?.status === "live" && !replaying ? report : LIVE_STATUS
 
   return (
     <main className="mx-auto w-full max-w-screen-2xl px-4 py-8 tabular-nums sm:px-6 sm:py-12 lg:px-10">
@@ -41,7 +44,12 @@ export function ResultsScreen() {
             round={selected?.round ?? DEFAULT_ROUND}
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <RoundTabs rounds={rounds} liveStatus={liveStatus} />
+            <RoundTabs
+              rounds={rounds}
+              liveStatus={liveStatus}
+              selected={selected?.round ?? null}
+              replaying={replaying}
+            />
             <ThemeToggle />
           </div>
         </div>

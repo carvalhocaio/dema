@@ -168,3 +168,28 @@ def test_serves_the_minute_by_minute_timeline(client: TestClient) -> None:
     assert first["verdict"] == "undecided"
     assert second["shares"]["27"] == 0.65
     assert body["decided_at"] == second["at"] == "2026-10-04T20:03:00Z"
+
+
+def test_serves_a_full_results_view_per_replay_minute(client: TestClient) -> None:
+    body = client.get("/rounds/1/replay").json()
+    timeline = client.get("/rounds/1/timeline").json()
+
+    first, second = body["points"]
+    assert (body["year"], body["round"]) == (2026, 1)
+    assert [p["at"] for p in body["points"]] == [p["at"] for p in timeline["points"]]
+    assert first["results"]["progress"]["counted_sections"] == 5
+    assert first["results"]["candidates"][0]["share"] == 0.6
+    assert second["results"]["verdict"] == timeline["points"][1]["verdict"]
+    assert second["results"]["votes"]["turnout"] == 2_050
+
+
+def test_replay_of_a_missing_round_is_not_found(client: TestClient) -> None:
+    response = client.get("/rounds/2/replay")
+
+    assert response.status_code == 404
+
+
+def test_compresses_large_responses(client: TestClient) -> None:
+    response = client.get("/rounds/1/replay", headers={"Accept-Encoding": "gzip"})
+
+    assert response.headers.get("content-encoding") == "gzip"

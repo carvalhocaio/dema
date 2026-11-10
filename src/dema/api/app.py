@@ -6,10 +6,17 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
 from dema.api.broadcaster import Broadcaster
-from dema.api.schemas import ResultsView, RoundStatus, RoundView, TimelineView
+from dema.api.schemas import (
+    ReplayView,
+    ResultsView,
+    RoundStatus,
+    RoundView,
+    TimelineView,
+)
 from dema.api.sources import ActiveRound, Archive, PostgresArchive, SnapshotFactory
 from dema.config import Settings, get_settings
 from dema.domain.election import Election, ElectionNotSetUpError, ElectionRound
@@ -22,6 +29,7 @@ from dema.wiring import open_database, open_redis
 NOT_READY = "election is not set up yet"
 NOT_FOUND = "round {round} is not set up"
 NOT_LIVE = "round {round} is not being counted"
+GZIP_MINIMUM_SIZE = 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +81,7 @@ def create_app(
                 await task
 
     app = FastAPI(title="dema", lifespan=lifespan)
+    app.add_middleware(GZipMiddleware, minimum_size=GZIP_MINIMUM_SIZE)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -89,6 +98,7 @@ def create_app(
         response_class=EventSourceResponse,
     )
     app.add_api_route("/rounds/{round_}/timeline", round_timeline, methods=["GET"])
+    app.add_api_route("/rounds/{round_}/replay", round_replay, methods=["GET"])
     return app
 
 
@@ -164,3 +174,8 @@ async def round_timeline(
 ) -> TimelineView:
     election = (await context.record(round_)).election
     return TimelineView.build(election, await context.archive.timeline(election))
+
+
+async def round_replay(round_: ElectionRound, context: ContextDependency) -> ReplayView:
+    election = (await context.record(round_)).election
+    return ReplayView.build(election, await context.archive.timeline(election))

@@ -124,3 +124,28 @@ class TimelineView(View):
             ),
             decided_at=timeline.decided_at,
         )
+
+
+class ReplayPointView(View):
+    at: datetime
+    results: ResultsView
+
+
+class ReplayView(View):
+    year: int
+    round: int
+    points: tuple[ReplayPointView, ...]
+
+    @classmethod
+    def build(cls, election: Election, timeline: Timeline) -> "ReplayView":
+        return cls(
+            year=election.year,
+            round=election.round,
+            points=tuple(
+                ReplayPointView(
+                    at=point.at,
+                    results=ResultsView.build(election, point.tally, point.outcome),
+                )
+                for point in timeline.points
+            ),
+        )
