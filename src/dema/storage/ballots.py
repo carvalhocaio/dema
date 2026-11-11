@@ -5,7 +5,14 @@ from datetime import datetime
 from psycopg import AsyncConnection
 
 from dema.domain.election import Election
+from dema.domain.state import State
 from dema.integrity.signer import VerifiedBallot
+from dema.tallying.states import (
+    StateCount,
+    StateTally,
+    StateTotals,
+    build_state_tallies,
+)
 from dema.tallying.tally import Tally
 from dema.tallying.timeline import MinuteCount, Timeline, build_timeline
 
@@ -85,7 +92,58 @@ ON CONFLICT (year, round, minute, candidate) DO UPDATE SET
 
 ONLY_SECTIONS = "AND b.section = ANY(%(sections)s::text[])"
 
+ROLLUP_STATE_TOTALS = """
+INSERT INTO state_totals
+    (year, round, state, sections, electorate, blank_votes, null_votes)
+SELECT
+    b.year, b.round, s.state,
+    count(*), sum(s.eligible_voters), sum(b.blank_votes), sum(b.null_votes)
+FROM ballots AS b
+JOIN sections AS s ON s.key = b.section
+WHERE b.year = %(year)s AND b.round = %(round)s {sections}
+GROUP BY b.year, b.round, s.state
+ORDER BY s.state
+ON CONFLICT (year, round, state) DO UPDATE SET
+    sections = state_totals.sections + EXCLUDED.sections,
+    electorate = state_totals.electorate + EXCLUDED.electorate,
+    blank_votes = state_totals.blank_votes + EXCLUDED.blank_votes,
+    null_votes = state_totals.null_votes + EXCLUDED.null_votes
+"""
+
+ROLLUP_STATE_VOTES = """
+INSERT INTO state_votes (year, round, state, candidate, votes)
+SELECT v.year, v.round, s.state, v.candidate, sum(v.votes)
+FROM ballot_votes AS v
+JOIN ballots AS b USING (year, round, section)
+JOIN sections AS s ON s.key = b.section
+WHERE v.year = %(year)s AND v.round = %(round)s {sections}
+GROUP BY v.year, v.round, s.state, v.candidate
+ORDER BY s.state, v.candidate
+ON CONFLICT (year, round, state, candidate) DO UPDATE SET
+    votes = state_votes.votes + EXCLUDED.votes
+"""
+
+STATE_TOTALS = """
+SELECT state, count(*), sum(eligible_voters) FROM sections GROUP BY state
+"""
+
+STATE_COUNTS = """
+SELECT state, sections, electorate, blank_votes, null_votes
+FROM state_totals
+WHERE year = %(year)s AND round = %(round)s
+"""
+
+STATE_VOTES = """
+SELECT state, candidate, votes
+FROM state_votes
+WHERE year = %(year)s AND round = %(round)s
+"""
+
+ROLLUPS = (ROLLUP_TOTALS, ROLLUP_VOTES, ROLLUP_STATE_TOTALS, ROLLUP_STATE_VOTES)
+
 CLEAR_ROLLUP = (
+    "DELETE FROM state_votes WHERE year = %(year)s AND round = %(round)s",
+    "DELETE FROM state_totals WHERE year = %(year)s AND round = %(round)s",
     "DELETE FROM minute_votes WHERE year = %(year)s AND round = %(round)s",
     "DELETE FROM minute_totals WHERE year = %(year)s AND round = %(round)s",
 )
@@ -156,8 +214,32 @@ class PostgresBallotRepository:
         ]
         return build_timeline(self._election, minutes, sections, int(electorate))
 
+    async def states(self) -> tuple[StateTally, ...]:
+        cursor = await self._connection.execute(STATE_TOTALS)
+        totals = [
+            StateTotals(State(state), sections, int(electorate))
+            for state, sections, electorate in await cursor.fetchall()
+        ]
+        cursor = await self._connection.execute(STATE_VOTES, self._scope())
+        votes: dict[str, dict[int, int]] = defaultdict(dict)
+        for state, candidate, total in await cursor.fetchall():
+            votes[state][candidate] = int(total)
+        cursor = await self._connection.execute(STATE_COUNTS, self._scope())
+        counts = [
+            StateCount(
+                state=State(state),
+                sections=sections,
+                electorate=int(electorate),
+                blank_votes=int(blank),
+                null_votes=int(null),
+                nominal_votes=votes[state],
+            )
+            for state, sections, electorate, blank, null in await cursor.fetchall()
+        ]
+        return build_state_tallies(self._election, totals, counts)
+
     async def _roll_up(self, sections: str, params: dict[str, list[str]]) -> None:
-        for template in (ROLLUP_TOTALS, ROLLUP_VOTES):
+        for template in ROLLUPS:
             await self._connection.execute(
                 template.format(sections=sections).encode(), self._scope() | params
             )

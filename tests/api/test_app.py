@@ -193,3 +193,23 @@ def test_compresses_large_responses(client: TestClient) -> None:
     response = client.get("/rounds/1/replay", headers={"Accept-Encoding": "gzip"})
 
     assert response.headers.get("content-encoding") == "gzip"
+
+
+def test_serves_the_tally_per_state(client: TestClient) -> None:
+    body = client.get("/rounds/1/states").json()
+
+    sp, zz = body["states"]
+    assert (body["year"], body["round"]) == (2026, 1)
+    assert (sp["state"], sp["region"]) == ("SP", "southeast")
+    assert (sp["counted_sections"], sp["total_sections"]) == (4, 10)
+    assert sp["progress"] == 0.4
+    assert sp["leader"] == 27
+    assert [c["number"] for c in sp["candidates"][:2]] == [27, 99]
+    assert sp["candidates"][0]["share"] == pytest.approx(500 / 900)
+    assert (zz["state"], zz["region"], zz["leader"]) == ("ZZ", "abroad", None)
+    assert (zz["counted_sections"], zz["progress"]) == (0, 0.0)
+    assert all(c["votes"] == 0 for c in zz["candidates"])
+
+
+def test_states_of_a_missing_round_are_not_found(client: TestClient) -> None:
+    assert client.get("/rounds/2/states").status_code == 404

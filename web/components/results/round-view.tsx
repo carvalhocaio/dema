@@ -10,6 +10,7 @@ import { usePalette } from "@/hooks/use-palette"
 import { useReplay, type ReplayClock } from "@/hooks/use-replay"
 import { useReplayData } from "@/hooks/use-replay-data"
 import { useRoundResults } from "@/hooks/use-round-results"
+import { useStates } from "@/hooks/use-states"
 import { useTimeline } from "@/hooks/use-timeline"
 import { connectionStatus, type StatusReport } from "@/lib/connection"
 import { indexAt, REPLAY_STATUS, timelineUpTo } from "@/lib/replay"
@@ -30,6 +31,10 @@ export function RoundView({
 }) {
   const live = useRoundResults(round.round, round.status === "live")
   const timeline = useTimeline(
+    round.round,
+    live.results?.progress.counted_sections ?? null
+  )
+  const states = useStates(
     round.round,
     live.results?.progress.counted_sections ?? null
   )
@@ -72,6 +77,7 @@ export function RoundView({
         timeline={
           frame !== null && timeline ? timelineUpTo(timeline, frame) : timeline
         }
+        states={replaying ? null : states}
         palette={palette}
       />
     </div>

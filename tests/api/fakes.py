@@ -2,9 +2,16 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 
 from dema.domain.election import Election, ElectionNotSetUpError, ElectionRound
+from dema.domain.state import State
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND, KEONS, NICO
 from dema.simulation.runoff import SECOND_ROUND_POLLS_CLOSE
 from dema.storage.elections import ElectionRecord
+from dema.tallying.states import (
+    StateCount,
+    StateTally,
+    StateTotals,
+    build_state_tallies,
+)
 from dema.tallying.tally import Tally
 from dema.tallying.timeline import MinuteCount, Timeline, build_timeline
 
@@ -51,6 +58,14 @@ def make_timeline(election: Election) -> Timeline:
     return build_timeline(election, minutes, 10, 3_000)
 
 
+def make_states(election: Election) -> tuple[StateTally, ...]:
+    totals = [StateTotals(State.SP, 10, 3_000), StateTotals(State.ZZ, 2, 100)]
+    counts = [
+        StateCount(State.SP, 4, 1_200, 10, 15, {KEONS.number: 500, NICO.number: 400})
+    ]
+    return build_state_tallies(election, totals, counts)
+
+
 class FakeSource:
     def __init__(self, tally: Tally | None = None) -> None:
         self.tally = tally
@@ -82,6 +97,9 @@ class FakeArchive:
 
     async def tally(self, election: Election) -> Tally:
         return self.tallies[election.round]
+
+    async def states(self, election: Election) -> tuple[StateTally, ...]:
+        return make_states(election)
 
     async def timeline(self, election: Election) -> Timeline:
         return make_timeline(election)

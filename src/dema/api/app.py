@@ -15,6 +15,7 @@ from dema.api.schemas import (
     ResultsView,
     RoundStatus,
     RoundView,
+    StatesView,
     TimelineView,
 )
 from dema.api.sources import ActiveRound, Archive, PostgresArchive, SnapshotFactory
@@ -99,6 +100,7 @@ def create_app(
     )
     app.add_api_route("/rounds/{round_}/timeline", round_timeline, methods=["GET"])
     app.add_api_route("/rounds/{round_}/replay", round_replay, methods=["GET"])
+    app.add_api_route("/rounds/{round_}/states", round_states, methods=["GET"])
     return app
 
 
@@ -179,3 +181,8 @@ async def round_timeline(
 async def round_replay(round_: ElectionRound, context: ContextDependency) -> ReplayView:
     election = (await context.record(round_)).election
     return ReplayView.build(election, await context.archive.timeline(election))
+
+
+async def round_states(round_: ElectionRound, context: ContextDependency) -> StatesView:
+    election = (await context.record(round_)).election
+    return StatesView.build(election, await context.archive.states(election))

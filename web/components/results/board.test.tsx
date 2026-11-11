@@ -128,6 +128,7 @@ describe("ResultsBoard", () => {
       <ResultsBoard
         palette={PALETTE}
         timeline={null}
+        states={null}
         results={makeResults({ verdict: "runoff", finalists: [27, 99] })}
       />
     )
@@ -138,11 +139,12 @@ describe("ResultsBoard", () => {
       "Seções totalizadas",
       "Minuto a minuto · % dos votos válidos",
       "Candidatos · % dos votos válidos",
+      "Por estado · líder em cada UF",
       "Votos",
     ])
     expect(
-      screen.getByText("Aguardando os primeiros boletins.")
-    ).toBeInTheDocument()
+      screen.getAllByText("Aguardando os primeiros boletins.")
+    ).toHaveLength(2)
     expect(screen.getByText("2º turno: Keons × Nico")).toBeInTheDocument()
   })
 })
@@ -168,7 +170,12 @@ describe("VerdictBanner with a timeline", () => {
 describe("ResultsBoard on desktop", () => {
   it("puts candidates left of the chart while keeping the reading order", () => {
     render(
-      <ResultsBoard palette={PALETTE} timeline={null} results={makeResults()} />
+      <ResultsBoard
+        palette={PALETTE}
+        timeline={null}
+        states={null}
+        results={makeResults()}
+      />
     )
 
     const chart = screen.getByText("Minuto a minuto · % dos votos válidos")

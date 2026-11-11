@@ -4,7 +4,9 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict
 
 from dema.domain.election import Election
-from dema.tallying.outcome import Outcome, Verdict
+from dema.domain.state import Region
+from dema.tallying.outcome import Outcome, Verdict, decide
+from dema.tallying.states import StateTally
 from dema.tallying.tally import Tally
 from dema.tallying.timeline import Timeline
 
@@ -147,5 +149,53 @@ class ReplayView(View):
                     results=ResultsView.build(election, point.tally, point.outcome),
                 )
                 for point in timeline.points
+            ),
+        )
+
+
+class StateCandidateView(View):
+    number: int
+    votes: int
+    share: float
+
+
+class StateView(View):
+    state: str
+    region: Region
+    counted_sections: int
+    total_sections: int
+    progress: float
+    candidates: tuple[StateCandidateView, ...]
+    leader: int | None
+
+
+class StatesView(View):
+    year: int
+    round: int
+    states: tuple[StateView, ...]
+
+    @classmethod
+    def build(cls, election: Election, states: tuple[StateTally, ...]) -> "StatesView":
+        return cls(
+            year=election.year,
+            round=election.round,
+            states=tuple(
+                StateView(
+                    state=item.state.value,
+                    region=item.state.region,
+                    counted_sections=item.tally.counted_sections,
+                    total_sections=item.tally.total_sections,
+                    progress=item.tally.progress,
+                    candidates=tuple(
+                        StateCandidateView(
+                            number=result.candidate.number,
+                            votes=result.votes,
+                            share=result.share,
+                        )
+                        for result in decide(election, item.tally).ranking
+                    ),
+                    leader=item.leader,
+                )
+                for item in states
             ),
         )

@@ -1,18 +1,22 @@
 import { CandidateList } from "@/components/results/candidate-list"
 import { ProgressPanel } from "@/components/results/progress-panel"
+import { StatesSection } from "@/components/results/states-section"
 import { TimelineSection } from "@/components/results/timeline-section"
 import { VerdictBanner } from "@/components/results/verdict-banner"
 import { VoteBreakdown } from "@/components/results/vote-breakdown"
 import type { Results } from "@/lib/results"
+import type { States } from "@/lib/states"
 import { decision, type Timeline } from "@/lib/timeline"
 
 export function ResultsBoard({
   results,
   timeline,
+  states,
   palette,
 }: {
   results: Results
   timeline: Timeline | null
+  states: States | null
   palette: readonly number[]
 }) {
   return (
@@ -35,6 +39,11 @@ export function ResultsBoard({
           <CandidateList results={results} palette={palette} />
         </div>
       </div>
+      <StatesSection
+        states={states}
+        candidates={results.candidates}
+        palette={palette}
+      />
       <VoteBreakdown results={results} />
     </div>
   )

@@ -8,6 +8,7 @@ from dema.domain.election import Election, ElectionRound
 from dema.storage.ballots import PostgresBallotRepository
 from dema.storage.elections import ElectionRecord, ElectionRepository
 from dema.tallying.outcome import decide
+from dema.tallying.states import StateTally
 from dema.tallying.tally import Tally
 from dema.tallying.timeline import Timeline
 
@@ -28,6 +29,8 @@ class Archive(Protocol):
 
     async def timeline(self, election: Election) -> Timeline: ...
 
+    async def states(self, election: Election) -> tuple[StateTally, ...]: ...
+
 
 class PostgresArchive:
     def __init__(self, connection: AsyncConnection) -> None:
@@ -45,6 +48,9 @@ class PostgresArchive:
 
     async def timeline(self, election: Election) -> Timeline:
         return await PostgresBallotRepository(self._connection, election).timeline()
+
+    async def states(self, election: Election) -> tuple[StateTally, ...]:
+        return await PostgresBallotRepository(self._connection, election).states()
 
 
 class ActiveRound:

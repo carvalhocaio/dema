@@ -79,9 +79,12 @@ async def test_serves_finished_rounds_from_postgres(
     with TestClient(create_app(settings=settings)) as client:
         rounds = client.get("/rounds").json()
         results = client.get("/rounds/1/results").json()
+        states = client.get("/rounds/1/states").json()
 
     tally = expected_tally(small_catalog, small_ballots)
     assert rounds == [{"round": 1, "status": "final"}]
+    counted = sum(state["counted_sections"] for state in states["states"])
+    assert counted == len(small_ballots)
     assert ResultsView.model_validate(results) == ResultsView.build(
         ELECTION, tally, decide(ELECTION, tally)
     )
