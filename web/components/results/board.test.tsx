@@ -14,7 +14,7 @@ const PALETTE = [27, 31, 99]
 
 describe("ProgressPanel", () => {
   it("shows the counted share with pt-BR numbers", () => {
-    render(<ProgressPanel progress={makeResults().progress} />)
+    render(<ProgressPanel progress={makeResults().progress} remaining={null} />)
 
     expect(screen.getByText("87,30%")).toBeInTheDocument()
     expect(screen.getByText("451.203")).toBeInTheDocument()
@@ -24,9 +24,15 @@ describe("ProgressPanel", () => {
 
   it("marks a finished count", () => {
     const { progress } = makeResults()
-    render(<ProgressPanel progress={{ ...progress, is_complete: true }} />)
+    render(
+      <ProgressPanel
+        progress={{ ...progress, is_complete: true }}
+        remaining="Faltam 51 votos"
+      />
+    )
 
     expect(screen.getByText("Totalização concluída")).toBeInTheDocument()
+    expect(screen.getByText("Faltam 51 votos")).toBeInTheDocument()
   })
 })
 

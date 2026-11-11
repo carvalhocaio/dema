@@ -9,6 +9,7 @@ import {
   formatElapsed,
   formatPercentTick,
   labelOffsets,
+  leadChangeProgress,
   leadSince,
   PROGRESS_TICKS,
   seriesKey,
@@ -166,5 +167,16 @@ describe("labelOffsets", () => {
     expect(offsets.get(27)).toBe(0)
     expect(offsets.get(99)).toBeCloseTo(12)
     expect(offsets.get(31)).toBe(0)
+  })
+})
+
+describe("leadChangeProgress", () => {
+  it("maps lead changes to the share of sections counted", () => {
+    expect(leadChangeProgress(makeTimeline())).toEqual([0.6])
+    expect(
+      leadChangeProgress(
+        makeTimeline({ lead_changes: ["2026-10-04T23:59:00Z"] })
+      )
+    ).toEqual([])
   })
 })

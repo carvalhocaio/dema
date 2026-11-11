@@ -4,7 +4,7 @@ import { StatesSection } from "@/components/results/states-section"
 import { TimelineSection } from "@/components/results/timeline-section"
 import { VerdictBanner } from "@/components/results/verdict-banner"
 import { VoteBreakdown } from "@/components/results/vote-breakdown"
-import type { Results } from "@/lib/results"
+import { remainingLine, type Results } from "@/lib/results"
 import type { States } from "@/lib/states"
 import { decision, type Timeline } from "@/lib/timeline"
 
@@ -21,7 +21,10 @@ export function ResultsBoard({
 }) {
   return (
     <div className="space-y-10">
-      <ProgressPanel progress={results.progress} />
+      <ProgressPanel
+        progress={results.progress}
+        remaining={remainingLine(results)}
+      />
       <VerdictBanner
         results={results}
         palette={palette}

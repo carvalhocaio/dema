@@ -36,6 +36,7 @@ describe("timelineUpTo", () => {
     expect(timelineUpTo(timeline, 0)).toEqual({
       ...timeline,
       points: timeline.points.slice(0, 1),
+      lead_changes: [],
       decided_at: null,
     })
     expect(timelineUpTo(timeline, 1).decided_at).toBe(timeline.decided_at)

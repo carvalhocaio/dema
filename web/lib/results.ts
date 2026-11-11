@@ -25,6 +25,13 @@ export type Candidate = {
   share: number
 }
 
+export type Margin = {
+  remaining_electorate: number
+  leader_votes: number
+  votes_to_majority: number
+  runoff_gap: number | null
+}
+
 export type Results = {
   year: number
   round: number
@@ -33,6 +40,7 @@ export type Results = {
   candidates: Candidate[]
   verdict: Verdict
   finalists: number[]
+  margin: Margin
 }
 
 export type BreakdownItem = {
@@ -138,4 +146,17 @@ export function voteBreakdown(results: Results): BreakdownItem[] {
       basis: OF_COUNTED_ELECTORATE,
     },
   ]
+}
+
+export function remainingLine(results: Results): string | null {
+  if (hasVerdict(results) || results.candidates.length === 0) return null
+  const leader = results.candidates[0]
+  const { margin } = results
+  const need = `Faltam ${formatInteger(margin.votes_to_majority)} votos para ${leader.name} garantir a vitória`
+  const left = `restam ${formatInteger(margin.remaining_electorate)} eleitores`
+  if (results.round === 1 && margin.runoff_gap !== null) {
+    const gap = `2º e 3º separados por ${formatInteger(margin.runoff_gap)} votos`
+    return `${need} · ${left} · ${gap}`
+  }
+  return `${need} · ${left}`
 }

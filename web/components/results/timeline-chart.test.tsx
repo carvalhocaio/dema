@@ -50,6 +50,7 @@ describe("TimelineChart", () => {
     expect(screen.getByText("40,00%")).toBeInTheDocument()
     expect(screen.queryByText("10,00%")).toBeNull()
     expect(screen.getByText("Mat. definido")).toBeInTheDocument()
+    expect(screen.getByText("Virada")).toBeInTheDocument()
   })
 
   it("leaves the decision line out while the result is open", () => {

@@ -30,6 +30,7 @@ import {
   emphasizedNumbers,
   formatPercentTick,
   labelOffsets,
+  leadChangeProgress,
   MAJORITY,
   PROGRESS_TICKS,
   seriesKey,
@@ -116,6 +117,20 @@ export function TimelineChart({ timeline, candidates, palette }: Props) {
             stroke="var(--muted-foreground)"
             strokeOpacity={0.7}
           />
+          {leadChangeProgress(timeline).map((progress) => (
+            <ReferenceLine
+              key={`lead-${progress}`}
+              x={progress}
+              stroke="var(--muted-foreground)"
+              strokeDasharray="1 3"
+              label={{
+                value: "Virada",
+                position: "insideBottomLeft",
+                fill: "var(--muted-foreground)",
+                fontSize: 10,
+              }}
+            />
+          ))}
           {decided && (
             <ReferenceLine
               x={decided.progress}

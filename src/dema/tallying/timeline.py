@@ -36,6 +36,17 @@ class Timeline:
     points: tuple[TimelinePoint, ...]
 
     @property
+    def lead_changes(self) -> tuple[datetime, ...]:
+        changes: list[datetime] = []
+        previous: int | None = None
+        for point in self.points:
+            leader = point.outcome.leader.candidate.number
+            if previous is not None and leader != previous:
+                changes.append(point.at)
+            previous = leader
+        return tuple(changes)
+
+    @property
     def decided_at(self) -> datetime | None:
         return next(
             (p.at for p in self.points if p.outcome.verdict is not Verdict.UNDECIDED),

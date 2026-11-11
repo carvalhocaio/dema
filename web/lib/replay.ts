@@ -34,9 +34,13 @@ export function timelineUpTo(timeline: Timeline, index: number): Timeline {
   const points = timeline.points.slice(0, index + 1)
   const last = points[points.length - 1]
   const decided = timeline.decided_at
+  const lastAt = last ? Date.parse(last.at) : -Infinity
   return {
     ...timeline,
     points,
+    lead_changes: timeline.lead_changes.filter(
+      (at) => Date.parse(at) <= lastAt
+    ),
     decided_at:
       decided && last && Date.parse(decided) <= Date.parse(last.at)
         ? decided

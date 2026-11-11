@@ -12,6 +12,7 @@ export type Timeline = {
   round: number
   points: TimelinePoint[]
   decided_at: string | null
+  lead_changes: string[]
 }
 
 export type ChartRow = { progress: number; elapsed: number } & Record<
@@ -175,4 +176,14 @@ export function labelOffsets(
     previous = placed
   }
   return offsets
+}
+
+export function leadChangeProgress(timeline: Timeline): number[] {
+  const byAt = new Map(
+    timeline.points.map((point) => [point.at, point.progress])
+  )
+  return timeline.lead_changes.flatMap((at) => {
+    const progress = byAt.get(at)
+    return progress === undefined ? [] : [progress]
+  })
 }

@@ -16,7 +16,13 @@ function CountOf({ part, whole }: { part: number; whole: number }) {
   )
 }
 
-export function ProgressPanel({ progress }: { progress: ProgressData }) {
+export function ProgressPanel({
+  progress,
+  remaining,
+}: {
+  progress: ProgressData
+  remaining: string | null
+}) {
   const electorateRatio = ratio(
     progress.counted_electorate,
     progress.total_electorate
@@ -65,6 +71,9 @@ export function ProgressPanel({ progress }: { progress: ProgressData }) {
           </div>
         </div>
       </div>
+      {remaining && (
+        <p className="text-sm text-muted-foreground">{remaining}</p>
+      )}
     </section>
   )
 }

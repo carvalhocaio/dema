@@ -24,6 +24,7 @@ export function makeTimeline(overrides: Partial<Timeline> = {}): Timeline {
       ),
     ],
     decided_at: "2026-10-04T20:30:00Z",
+    lead_changes: ["2026-10-04T20:30:00Z"],
     ...overrides,
   }
 }

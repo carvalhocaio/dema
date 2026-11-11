@@ -56,3 +56,22 @@ def test_an_undecided_count_has_no_decision_time() -> None:
     timeline = build_timeline(ELECTION, [minute(0, 10, 10, 10)], 10, 10_000)
 
     assert timeline.decided_at is None
+
+
+def test_marks_the_minutes_where_the_leader_changed() -> None:
+    minutes = [
+        minute(0, 10, 50, 5),
+        minute(1, 60, 5, 5),
+        minute(2, 5, 5, 5),
+        minute(3, 5, 200, 5),
+    ]
+
+    timeline = build_timeline(ELECTION, minutes, 4, 10_000)
+
+    assert timeline.lead_changes == (minutes[1].minute, minutes[3].minute)
+
+
+def test_a_steady_lead_has_no_changes() -> None:
+    timeline = build_timeline(ELECTION, [minute(0, 10, 50, 5)], 10, 10_000)
+
+    assert timeline.lead_changes == ()

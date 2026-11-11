@@ -6,6 +6,7 @@ import {
   formatInteger,
   formatPercent,
   hasVerdict,
+  remainingLine,
   isFinalist,
   ratio,
   roundLabel,
@@ -58,6 +59,12 @@ function makeResults(overrides: Partial<Results> = {}): Results {
     ],
     verdict: "undecided",
     finalists: [],
+    margin: {
+      remaining_electorate: 200,
+      leader_votes: 350,
+      votes_to_majority: 51,
+      runoff_gap: 150,
+    },
     ...overrides,
   }
 }
@@ -147,5 +154,30 @@ describe("voteBreakdown", () => {
       Comparecimento: "do eleitorado apurado",
       Abstenção: "do eleitorado apurado",
     })
+  })
+})
+
+describe("remainingLine", () => {
+  it("says what the leader still needs in the first round", () => {
+    expect(remainingLine(makeResults())).toBe(
+      "Faltam 51 votos para Keons garantir a vitória · restam 200 eleitores · 2º e 3º separados por 150 votos"
+    )
+  })
+
+  it("drops the runoff gap in the second round", () => {
+    const results = makeResults({
+      round: 2,
+      margin: { ...makeResults().margin, runoff_gap: null },
+    })
+    expect(remainingLine(results)).toBe(
+      "Faltam 51 votos para Keons garantir a vitória · restam 200 eleitores"
+    )
+  })
+
+  it("is silent once decided or without candidates", () => {
+    expect(
+      remainingLine(makeResults({ verdict: "elected", finalists: [27] }))
+    ).toBeNull()
+    expect(remainingLine(makeResults({ candidates: [] }))).toBeNull()
   })
 })

@@ -49,6 +49,12 @@ export function makeResults(overrides: Partial<Results> = {}): Results {
     ],
     verdict: "undecided",
     finalists: [],
+    margin: {
+      remaining_electorate: 200,
+      leader_votes: 350,
+      votes_to_majority: 51,
+      runoff_gap: 150,
+    },
     ...overrides,
   }
 }

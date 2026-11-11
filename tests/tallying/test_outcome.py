@@ -112,3 +112,29 @@ def test_first_round_with_two_candidates_goes_to_runoff_on_a_tie() -> None:
 
     assert outcome.verdict is Verdict.RUNOFF
     assert outcome.finalists == (NICO, KEONS)
+
+
+def test_margin_counts_what_the_leader_still_needs() -> None:
+    outcome = decide(FIRST_ROUND, first_round(300, 450, 250, remaining=200))
+
+    assert outcome.margin.remaining_electorate == 200
+    assert outcome.margin.leader_votes == 450
+    assert outcome.margin.votes_to_majority == (1_000 + 200) // 2 + 1 - 450
+    assert outcome.margin.runoff_gap == 50
+    assert outcome.margin.majority_secured is False
+    assert outcome.margin.runoff_secured is False
+
+
+def test_margin_is_zero_once_the_majority_is_secured() -> None:
+    outcome = decide(FIRST_ROUND, first_round(100, 700, 100, remaining=50))
+
+    assert outcome.verdict is Verdict.ELECTED
+    assert outcome.margin.votes_to_majority == 0
+    assert outcome.margin.majority_secured is True
+
+
+def test_margin_has_no_runoff_gap_in_the_second_round() -> None:
+    outcome = decide(SECOND_ROUND, make_tally({NICO.number: 400, KEONS.number: 500}))
+
+    assert outcome.margin.runoff_gap is None
+    assert outcome.margin.runoff_secured is False

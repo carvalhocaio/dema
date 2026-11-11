@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict
 
 from dema.domain.election import Election
 from dema.domain.state import Region
-from dema.tallying.outcome import Outcome, Verdict, decide
+from dema.tallying.outcome import Margin, Outcome, Verdict, decide
 from dema.tallying.states import StateTally
 from dema.tallying.tally import Tally
 from dema.tallying.timeline import Timeline
@@ -40,6 +40,25 @@ class VotesView(View):
     abstentions: int
 
 
+class MarginView(View):
+    remaining_electorate: int
+    leader: int
+    leader_votes: int
+    votes_to_majority: int
+    runoff_gap: int | None
+
+    @classmethod
+    def build(cls, outcome: Outcome) -> "MarginView":
+        margin: Margin = outcome.margin
+        return cls(
+            remaining_electorate=margin.remaining_electorate,
+            leader=outcome.leader.candidate.number,
+            leader_votes=margin.leader_votes,
+            votes_to_majority=margin.votes_to_majority,
+            runoff_gap=margin.runoff_gap,
+        )
+
+
 class ResultsView(View):
     year: int
     round: int
@@ -48,6 +67,7 @@ class ResultsView(View):
     candidates: tuple[CandidateView, ...]
     verdict: Verdict
     finalists: tuple[int, ...]
+    margin: MarginView
 
     @classmethod
     def build(cls, election: Election, tally: Tally, outcome: Outcome) -> "ResultsView":
@@ -81,6 +101,7 @@ class ResultsView(View):
             ),
             verdict=outcome.verdict,
             finalists=tuple(candidate.number for candidate in outcome.finalists),
+            margin=MarginView.build(outcome),
         )
 
 
@@ -106,6 +127,7 @@ class TimelineView(View):
     round: int
     points: tuple[TimelinePointView, ...]
     decided_at: datetime | None
+    lead_changes: tuple[datetime, ...]
 
     @classmethod
     def build(cls, election: Election, timeline: Timeline) -> "TimelineView":
@@ -125,6 +147,7 @@ class TimelineView(View):
                 for point in timeline.points
             ),
             decided_at=timeline.decided_at,
+            lead_changes=timeline.lead_changes,
         )
 
 

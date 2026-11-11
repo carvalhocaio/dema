@@ -75,6 +75,13 @@ def test_returns_live_results_for_the_active_round(
     assert body["progress"]["counted_sections"] == 4
     assert body["candidates"][0]["name"] == "Keons"
     assert body["verdict"] == "undecided"
+    assert body["margin"] == {
+        "leader": 27,
+        "remaining_electorate": 1_800,
+        "leader_votes": 600,
+        "votes_to_majority": (1_000 + 1_800) // 2 + 1 - 600,
+        "runoff_gap": 400,
+    }
     assert archive.loads == [(2026, ElectionRound.FIRST)]
 
 
@@ -168,6 +175,7 @@ def test_serves_the_minute_by_minute_timeline(client: TestClient) -> None:
     assert first["verdict"] == "undecided"
     assert second["shares"]["27"] == 0.65
     assert body["decided_at"] == second["at"] == "2026-10-04T20:03:00Z"
+    assert body["lead_changes"] == [second["at"]]
 
 
 def test_serves_a_full_results_view_per_replay_minute(client: TestClient) -> None:
