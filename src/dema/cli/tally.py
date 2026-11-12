@@ -4,10 +4,11 @@ from contextlib import suppress
 
 from dema.cli.common import Subparsers, format_progress
 from dema.config import get_settings
+from dema.runtime.active import ActiveRuns
 from dema.storage.ballots import PostgresBallotRepository
 from dema.tallying.outcome import decide
 from dema.tallying.redis_store import RedisTallyStore
-from dema.wiring import load_active_election, open_database, open_redis
+from dema.wiring import open_database, open_redis
 
 
 def register(commands: Subparsers) -> None:
@@ -30,7 +31,7 @@ def _watch(args: argparse.Namespace) -> None:
 async def _watch_async(interval: float) -> None:
     settings = get_settings()
     async with open_database(settings) as connection, open_redis(settings) as redis:
-        record = await load_active_election(settings, connection)
+        record = await ActiveRuns(redis, connection).current()
         election = record.election
         store = RedisTallyStore(redis, record.keys, election)
         last_counted = -1
@@ -52,8 +53,10 @@ def _rebuild(_: argparse.Namespace) -> None:
 async def _rebuild_async() -> int:
     settings = get_settings()
     async with open_database(settings) as connection, open_redis(settings) as redis:
-        record = await load_active_election(settings, connection)
-        repository = PostgresBallotRepository(connection, record.election)
+        record = await ActiveRuns(redis, connection).current()
+        repository = PostgresBallotRepository(
+            connection, record.election, record.run.id
+        )
         await repository.rebuild_rollup()
         tally = await repository.tally()
         store = RedisTallyStore(redis, record.keys, record.election)

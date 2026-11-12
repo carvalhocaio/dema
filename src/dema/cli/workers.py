@@ -8,10 +8,9 @@ import socket
 from dema.cli.common import Subparsers
 from dema.config import get_settings
 from dema.domain.election import ElectionNotSetUpError
-from dema.storage.ballots import PostgresBallotRepository
-from dema.streaming.stream import BallotStream
-from dema.tallying.redis_store import RedisTallyStore
-from dema.wiring import build_signer, load_active_election, open_database, open_redis
+from dema.runtime.active import ActiveRuns
+from dema.wiring import build_signer, open_database, open_redis
+from dema.workers.lanes import ActiveLanes
 from dema.workers.tally_worker import TallyWorker
 
 
@@ -57,15 +56,12 @@ async def _work_async(consumer: str) -> None:
     for signum in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(signum, stop.set)
     async with open_redis(settings) as redis, open_database(settings) as connection:
-        record = await load_active_election(settings, connection)
-        election = record.election
+        active = ActiveRuns(redis, connection)
+        await active.current()
         worker = TallyWorker(
-            stream=BallotStream(redis, record.keys),
+            lanes=ActiveLanes(active, redis, connection),
             signer=build_signer(settings),
-            repository=PostgresBallotRepository(connection, election),
-            store=RedisTallyStore(redis, record.keys, election),
             consumer=consumer,
             batch_size=settings.batch_size,
         )
-        logging.info("consuming %s", record.keys.ballots)
         await worker.run(stop)

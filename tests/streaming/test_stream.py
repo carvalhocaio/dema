@@ -3,15 +3,14 @@ from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
 from dema.integrity.signer import BallotSigner
-from dema.simulation.presets import DEMA_2026_FIRST_ROUND
 from dema.streaming.keys import CONSUMER_GROUP, ElectionKeys
 from dema.streaming.stream import BallotStream
-from tests.factories import make_ballot
+from tests.factories import make_ballot, make_run
 from tests.helpers import SIGNING_KEY, rejected_entries
 
 pytestmark = pytest.mark.integration
 
-KEYS = ElectionKeys.for_election(DEMA_2026_FIRST_ROUND.election)
+KEYS = ElectionKeys.for_run(make_run())
 
 
 @pytest.fixture
@@ -26,9 +25,9 @@ async def pending(redis_client: Redis) -> int:
     return summary["pending"]
 
 
-def test_keys_are_scoped_by_election() -> None:
-    assert KEYS.ballots == "dema:2026:1:ballots"
-    assert KEYS.tally == "dema:2026:1:tally"
+def test_keys_are_scoped_by_run() -> None:
+    assert KEYS.ballots == "dema:2026:1:7:ballots"
+    assert KEYS.tally == "dema:2026:1:7:tally"
 
 
 async def test_group_creation_is_idempotent(stream: BallotStream) -> None:
@@ -119,3 +118,23 @@ async def test_rejecting_malformed_entries_keeps_only_the_reason(
 
     [fields] = await rejected_entries(redis_client, KEYS)
     assert set(fields) == {b"entry", b"reason"}
+
+
+async def test_tags_entries_with_the_run_that_published_them(
+    redis_client: Redis,
+) -> None:
+    tagged = BallotStream(redis_client, KEYS, run_id=7)
+    await tagged.ensure_group()
+    await tagged.publish([BallotSigner(SIGNING_KEY).sign(make_ballot())])
+
+    [entry] = await tagged.read("worker-1", count=10, block_ms=10)
+
+    assert entry.run_id == 7
+
+
+async def test_entries_without_a_run_are_untagged(stream: BallotStream) -> None:
+    await stream.publish([BallotSigner(SIGNING_KEY).sign(make_ballot())])
+
+    [entry] = await stream.read("worker-1", count=10, block_ms=10)
+
+    assert entry.run_id is None

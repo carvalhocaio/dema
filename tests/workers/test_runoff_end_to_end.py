@@ -3,50 +3,54 @@ import pytest
 from psycopg import AsyncConnection
 from redis.asyncio import Redis
 
+from dema.domain.election import ElectionRound
+from dema.domain.run import Run
 from dema.integrity.signer import BallotSigner
+from dema.runtime.active import ActiveRuns
 from dema.sections.catalog import SectionCatalog
-from dema.simulation.generator import BallotGenerator
+from dema.services.counting import derive_runoff, simulate
+from dema.services.runs import publish_ballots, start_run
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
-from dema.simulation.runoff import SECOND_ROUND_POLLS_CLOSE, RunoffGenerator
+from dema.simulation.runoff import SECOND_ROUND_POLLS_CLOSE
 from dema.storage.ballots import PostgresBallotRepository
-from dema.storage.elections import ElectionRepository
 from dema.storage.seed import seed_election
-from dema.streaming.keys import ElectionKeys
-from dema.streaming.stream import BallotStream
 from dema.tallying.outcome import Verdict, decide
 from dema.tallying.redis_store import RedisTallyStore
+from dema.workers.lanes import ActiveLanes
 from dema.workers.tally_worker import TallyWorker
 from tests.helpers import SIGNING_KEY
 
 pytestmark = pytest.mark.integration
 
+INSTANT = 1e9
 
-async def test_runoff_is_counted_and_elects_someone(
+
+async def test_runoff_run_is_counted_by_workers_following_the_active_run(
     seeded: psycopg.Connection,
     async_connection: AsyncConnection,
     redis_client: Redis,
     small_catalog: SectionCatalog,
+    first_run: Run,
 ) -> None:
-    first_round = BallotGenerator(DEMA_2026_FIRST_ROUND, seed=7).generate(small_catalog)
-    runoff = RunoffGenerator(DEMA_2026_FIRST_ROUND, seed=7).generate(
-        first_round, DEMA_2026_FIRST_ROUND.election
-    )
+    first_round = simulate(DEMA_2026_FIRST_ROUND, small_catalog, 7)
+    runoff = derive_runoff(first_round, 7)
     seed_election(seeded, runoff.election, SECOND_ROUND_POLLS_CLOSE)
-    record = await ElectionRepository(async_connection).load(
-        2026, runoff.election.round
+    active = ActiveRuns(redis_client, async_connection)
+    second = await active.runs.create(
+        2026,
+        ElectionRound.SECOND,
+        7,
+        [candidate.number for candidate in runoff.election.candidates],
+        parent_id=first_run.id,
     )
-    keys = ElectionKeys.for_election(record.election)
-    store = RedisTallyStore(redis_client, keys, record.election)
-    await store.reset(len(small_catalog), small_catalog.total_electorate)
-    stream = BallotStream(redis_client, keys)
-    await stream.ensure_group()
+    record = await start_run(
+        active, redis_client, second, len(small_catalog), small_catalog.total_electorate
+    )
     signer = BallotSigner(SIGNING_KEY)
-    await stream.publish([signer.sign(b) for b in runoff.ballots.in_release_order()])
+    await publish_ballots(redis_client, record, signer, runoff.ballots, INSTANT, 500)
     worker = TallyWorker(
-        stream=stream,
+        lanes=ActiveLanes(active, redis_client, async_connection),
         signer=signer,
-        repository=PostgresBallotRepository(async_connection, record.election),
-        store=store,
         consumer="runoff-test",
         batch_size=100,
         block_ms=10,
@@ -55,12 +59,12 @@ async def test_runoff_is_counted_and_elects_someone(
     while await worker.run_once():
         pass
 
-    tally = await store.snapshot()
+    tally = await RedisTallyStore(redis_client, record.keys, record.election).snapshot()
     outcome = decide(record.election, tally)
     assert tally.is_complete
     assert outcome.verdict is Verdict.ELECTED
     assert outcome.finalists[0] in runoff.election.candidates
-    assert (
-        await PostgresBallotRepository(async_connection, record.election).tally()
-        == tally
-    )
+    repository = PostgresBallotRepository(async_connection, record.election, second.id)
+    assert await repository.tally() == tally
+    family = await active.family()
+    assert [item.run.id for item in family] == [first_run.id, second.id]

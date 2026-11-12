@@ -19,7 +19,7 @@ describe("useSelectedRound", () => {
   it("starts on the live round", () => {
     const { result } = renderHook(() => useSelectedRound(ROUNDS))
 
-    expect(result.current[0]?.round).toBe(2)
+    expect(result.current.selected?.round).toBe(2)
   })
 
   it("honours the round in the URL", () => {
@@ -27,17 +27,27 @@ describe("useSelectedRound", () => {
 
     const { result } = renderHook(() => useSelectedRound(ROUNDS))
 
-    expect(result.current[0]?.round).toBe(1)
+    expect(result.current.selected?.round).toBe(1)
   })
 
   it("keeps the choice in the URL", () => {
     window.history.replaceState(null, "", "/?foo=bar")
     const { result } = renderHook(() => useSelectedRound(ROUNDS))
 
-    act(() => result.current[1](1))
+    act(() => result.current.select(1))
 
-    expect(result.current[0]?.round).toBe(1)
+    expect(result.current.selected?.round).toBe(1)
     expect(window.location.search).toBe("?foo=bar&turno=1")
+  })
+
+  it("goes back to following the live round", () => {
+    window.history.replaceState(null, "", "/?turno=1&foo=bar")
+    const { result } = renderHook(() => useSelectedRound(ROUNDS))
+
+    act(() => result.current.follow())
+
+    expect(result.current.selected?.round).toBe(2)
+    expect(window.location.search).toBe("?foo=bar")
   })
 
   it("follows back and forward navigation", () => {
@@ -48,14 +58,14 @@ describe("useSelectedRound", () => {
       window.dispatchEvent(new PopStateEvent("popstate"))
     })
 
-    expect(result.current[0]?.round).toBe(1)
+    expect(result.current.selected?.round).toBe(1)
   })
 })
 
 describe("useSelectedRound on the server", () => {
   it("renders the live round without reading the URL", () => {
     function Probe() {
-      const [selected] = useSelectedRound(ROUNDS)
+      const { selected } = useSelectedRound(ROUNDS)
       return createElement("span", null, selected?.round)
     }
 

@@ -7,11 +7,18 @@ from fastapi.testclient import TestClient
 from dema.api.app import create_app
 from dema.config import Settings
 from dema.domain.election import ElectionRound
-from tests.api.fakes import SECOND_ROUND, FakeArchive, FakeSource, make_tally
+from tests.api.fakes import (
+    FIRST_RECORD,
+    SECOND_RECORD,
+    SECOND_ROUND,
+    FakeArchive,
+    FakeSource,
+    first_round_record,
+    make_tally,
+)
 
 SETTINGS = Settings(broadcast_interval=0.01, cors_origins=["http://localhost:3000"])
-RUNOFF_SETTINGS = SETTINGS.model_copy(update={"round": ElectionRound.SECOND})
-BOTH = (ElectionRound.FIRST, ElectionRound.SECOND)
+RUNS_SETTINGS = SETTINGS.model_copy(update={"allow_runs": True})
 
 
 @pytest.fixture
@@ -32,8 +39,10 @@ def client(source: FakeSource, archive: FakeArchive) -> Iterator[TestClient]:
 
 def runoff_client(source: FakeSource) -> TestClient:
     first_round = make_tally(counted_sections=10, keons=480, nico=420)
-    archive = FakeArchive(BOTH, {ElectionRound.FIRST: first_round})
-    return TestClient(create_app(RUNOFF_SETTINGS, archive, lambda _: source))
+    archive = FakeArchive(
+        (FIRST_RECORD, SECOND_RECORD), {ElectionRound.FIRST: first_round}
+    )
+    return TestClient(create_app(SETTINGS, archive, lambda _: source))
 
 
 def read_events(lines: Iterator[str], count: int) -> list[dict]:
@@ -82,7 +91,7 @@ def test_returns_live_results_for_the_active_round(
         "votes_to_majority": (1_000 + 1_800) // 2 + 1 - 600,
         "runoff_gap": 400,
     }
-    assert archive.loads == [(2026, ElectionRound.FIRST)]
+    assert body["run"] == {"id": 1, "round": 1, "seed": 40}
 
 
 def test_returns_fresh_live_results_on_each_request(
@@ -100,27 +109,29 @@ def test_reads_finished_rounds_from_the_archive() -> None:
         live = client.get("/rounds/2/results").json()
 
     assert final["round"] == 1
+    assert final["run"] == {"id": 1, "round": 1, "seed": 40}
     assert (final["verdict"], final["finalists"]) == ("elected", [27])
     assert final["progress"]["is_complete"] is True
     assert [c["number"] for c in live["candidates"]] == [27, 99]
 
 
-@pytest.mark.parametrize(
-    ("archive", "source"),
-    [
-        (FakeArchive(rounds=()), FakeSource(make_tally(4))),
-        (FakeArchive(), FakeSource()),
-    ],
-    ids=["no election in the database", "no tally in redis"],
-)
-def test_reports_unavailable_before_setup(
-    archive: FakeArchive, source: FakeSource
-) -> None:
-    with TestClient(create_app(SETTINGS, archive, lambda _: source)) as client:
-        response = client.get("/rounds/1/results")
+def test_reports_unavailable_before_the_tally_is_ready() -> None:
+    with TestClient(create_app(SETTINGS, FakeArchive(), lambda _: FakeSource())) as c:
+        response = c.get("/rounds/1/results")
 
     assert response.status_code == 503
     assert response.json() == {"detail": "election is not set up yet"}
+
+
+def test_lists_no_rounds_before_any_run() -> None:
+    archive = FakeArchive(family=())
+    with TestClient(create_app(SETTINGS, archive, lambda _: FakeSource())) as client:
+        rounds = client.get("/rounds").json()
+        results = client.get("/rounds/1/results")
+        stream = client.get("/rounds/1/stream")
+
+    assert rounds == []
+    assert results.status_code == stream.status_code == 404
 
 
 def test_reports_rounds_that_were_never_set_up(client: TestClient) -> None:
@@ -221,3 +232,116 @@ def test_serves_the_tally_per_state(client: TestClient) -> None:
 
 def test_states_of_a_missing_round_are_not_found(client: TestClient) -> None:
     assert client.get("/rounds/2/states").status_code == 404
+
+
+def test_reports_the_current_run_and_whether_new_counts_are_allowed(
+    client: TestClient,
+) -> None:
+    assert client.get("/runs/current").json() == {
+        "run": {"id": 1, "round": 1, "seed": 40, "status": "counting"},
+        "runs_enabled": False,
+    }
+
+
+def test_reports_no_current_run_before_setup() -> None:
+    archive = FakeArchive(family=())
+    with TestClient(create_app(SETTINGS, archive, lambda _: FakeSource())) as client:
+        body = client.get("/runs/current").json()
+
+    assert body == {"run": None, "runs_enabled": False}
+
+
+def test_refuses_new_counts_unless_enabled(client: TestClient) -> None:
+    response = client.post("/runs", json={"seed": 7})
+
+    assert response.status_code == 403
+    assert "DEMA_ALLOW_RUNS" in response.json()["detail"]
+
+
+def runs_client(archive: FakeArchive) -> TestClient:
+    return TestClient(create_app(RUNS_SETTINGS, archive, lambda _: FakeSource()))
+
+
+def test_requests_a_new_count_with_the_chosen_seed_and_speed() -> None:
+    archive = FakeArchive()
+    with runs_client(archive) as client:
+        response = client.post("/runs", json={"seed": 7, "speed": 600})
+
+    assert response.status_code == 202
+    assert response.json() == {"id": 99, "round": 1, "seed": 7, "status": "preparing"}
+    assert archive.requests == [(7, 600.0)]
+
+
+def test_draws_a_seed_when_none_is_given() -> None:
+    archive = FakeArchive()
+    with runs_client(archive) as client:
+        response = client.post("/runs")
+
+    [(seed, speed)] = archive.requests
+    assert response.json()["seed"] == seed >= 0
+    assert speed is None
+
+
+def test_rejects_invalid_count_requests() -> None:
+    with runs_client(FakeArchive()) as client:
+        assert client.post("/runs", json={"seed": -1}).status_code == 422
+        assert client.post("/runs", json={"speed": 0}).status_code == 422
+
+
+def test_new_counts_need_a_prepared_election() -> None:
+    with runs_client(FakeArchive(family=())) as client:
+        response = client.post("/runs", json={"seed": 7})
+
+    assert response.status_code == 503
+
+
+def test_allows_posting_from_the_frontend_only_when_enabled() -> None:
+    preflight = {
+        "Origin": "http://localhost:3000",
+        "Access-Control-Request-Method": "POST",
+    }
+    with runs_client(FakeArchive()) as enabled:
+        allowed = enabled.options("/runs", headers=preflight)
+    with TestClient(create_app(SETTINGS, FakeArchive(), lambda _: FakeSource())) as c:
+        refused = c.options("/runs", headers=preflight)
+
+    assert "POST" in allowed.headers["access-control-allow-methods"]
+    assert refused.status_code == 400
+
+
+def test_stream_announces_a_new_run_and_follows_it() -> None:
+    archive = FakeArchive()
+    source = FakeSource(make_tally(counted_sections=4))
+    app = create_app(SETTINGS, archive, lambda _: source)
+    with (
+        TestClient(app) as client,
+        client.stream("GET", "/rounds/1/stream") as response,
+    ):
+        lines = response.iter_lines()
+        [first] = read_events(lines, count=1)
+        archive.records = (first_round_record(3, seed=7),)
+        announced, followed = read_events(lines, count=2)
+
+    assert first["data"]["run"]["id"] == 1
+    assert (announced["event"], announced["data"]) == (
+        "run",
+        {"id": 3, "round": 1, "seed": 7},
+    )
+    assert (followed["event"], followed["data"]["run"]["id"]) == ("results", 3)
+
+
+def test_stream_announces_the_runoff_and_closes() -> None:
+    archive = FakeArchive()
+    source = FakeSource(make_tally(counted_sections=4))
+    app = create_app(SETTINGS, archive, lambda _: source)
+    with (
+        TestClient(app) as client,
+        client.stream("GET", "/rounds/1/stream") as response,
+    ):
+        lines = response.iter_lines()
+        read_events(lines, count=1)
+        archive.records = (FIRST_RECORD, SECOND_RECORD)
+        events = read_events(lines, count=5)
+
+    assert [event["event"] for event in events] == ["run"]
+    assert events[0]["data"] == {"id": 2, "round": 2, "seed": 40}

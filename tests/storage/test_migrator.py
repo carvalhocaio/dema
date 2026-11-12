@@ -20,6 +20,7 @@ def test_applies_pending_migrations_once(connection: psycopg.Connection) -> None
         "0001_initial_schema",
         "0002_minute_rollup",
         "0003_state_rollup",
+        "0004_runs",
     ]
     assert migrator.migrate() == []
 

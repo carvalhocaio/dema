@@ -34,10 +34,10 @@ describe("useRounds", () => {
   it("loads the rounds and keeps them fresh", async () => {
     const fetchMock = stubFetch(respond(200, FIRST), respond(200, BOTH))
     const { result } = renderHook(() => useRounds())
-    expect(result.current).toEqual({ status: "loading", rounds: [] })
+    expect(result.current).toMatchObject({ status: "loading", rounds: [] })
 
     await flush()
-    expect(result.current).toEqual({ status: "ready", rounds: FIRST })
+    expect(result.current).toMatchObject({ status: "ready", rounds: FIRST })
 
     await tick()
     expect(result.current.rounds).toEqual(BOTH)
@@ -45,6 +45,18 @@ describe("useRounds", () => {
       "http://127.0.0.1:8000/rounds",
       expect.objectContaining({ cache: "no-store" })
     )
+  })
+
+  it("reloads on demand", async () => {
+    const fetchMock = stubFetch(respond(200, FIRST), respond(200, BOTH))
+    const { result } = renderHook(() => useRounds())
+    await flush()
+
+    act(() => result.current.refresh())
+    await flush()
+
+    expect(result.current.rounds).toEqual(BOTH)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it("keeps the same state when nothing changed", async () => {
@@ -69,11 +81,14 @@ describe("useRounds", () => {
     await flush()
 
     await tick()
-    expect(result.current).toEqual({ status: "unavailable", rounds: FIRST })
+    expect(result.current).toMatchObject({
+      status: "unavailable",
+      rounds: FIRST,
+    })
     await tick()
     expect(result.current.status).toBe("unavailable")
     await tick()
-    expect(result.current).toEqual({ status: "ready", rounds: FIRST })
+    expect(result.current).toMatchObject({ status: "ready", rounds: FIRST })
   })
 
   it("stops polling on unmount and ignores the aborted request", async () => {

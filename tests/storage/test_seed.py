@@ -1,10 +1,16 @@
 import psycopg
 import pytest
+from psycopg import AsyncConnection
 
 from dema.sections.catalog import SectionCatalog
 from dema.sections.synthetic import SyntheticSectionSource
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
-from dema.storage.seed import clear_ballots, replace_sections, seed_election
+from dema.storage.seed import (
+    load_catalog,
+    replace_sections,
+    seed_election,
+    seed_election_at,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -46,25 +52,19 @@ def test_replacing_sections_drops_stale_ones(seeded: psycopg.Connection) -> None
     )
 
 
-def test_clears_election_ballots(seeded: psycopg.Connection) -> None:
-    section = scalar(seeded, "SELECT key FROM sections LIMIT 1")
-    seeded.execute(
-        "INSERT INTO ballots (year, round, section, blank_votes, null_votes, "
-        "issued_at, payload, signature) VALUES (2026, 1, %s, 0, 0, now(), '', '')",
-        (section,),
+async def test_loads_the_catalog_back_from_postgres(
+    async_connection: AsyncConnection, small_catalog: SectionCatalog
+) -> None:
+    catalog = await load_catalog(async_connection)
+
+    assert catalog.frame.equals(small_catalog.frame)
+
+
+def test_seeds_an_election_from_a_database_url(
+    migrated: psycopg.Connection, database_url: str
+) -> None:
+    seed_election_at(database_url, ELECTION, DEMA_2026_FIRST_ROUND.polls_close)
+
+    assert scalar(migrated, "SELECT count(*) FROM candidates") == len(
+        ELECTION.candidates
     )
-
-    seeded.execute(
-        "INSERT INTO minute_totals VALUES (2026, 1, now(), 1, 300, 1, 1); "
-        "INSERT INTO minute_votes VALUES (2026, 1, now(), 27, 100); "
-        "INSERT INTO state_totals VALUES (2026, 1, 'SP', 1, 300, 1, 1); "
-        "INSERT INTO state_votes VALUES (2026, 1, 'SP', 27, 100)"
-    )
-
-    clear_ballots(seeded, ELECTION)
-
-    assert scalar(seeded, "SELECT count(*) FROM ballots") == 0
-    assert scalar(seeded, "SELECT count(*) FROM minute_totals") == 0
-    assert scalar(seeded, "SELECT count(*) FROM minute_votes") == 0
-    assert scalar(seeded, "SELECT count(*) FROM state_totals") == 0
-    assert scalar(seeded, "SELECT count(*) FROM state_votes") == 0

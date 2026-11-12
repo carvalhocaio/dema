@@ -1,6 +1,8 @@
 from datetime import datetime
 
+import polars as pl
 import psycopg
+from psycopg import AsyncConnection
 
 from dema.domain.election import Election
 from dema.sections.catalog import SectionCatalog
@@ -64,19 +66,19 @@ def replace_sections(connection: psycopg.Connection, catalog: SectionCatalog) ->
         )
 
 
-def clear_ballots(connection: psycopg.Connection, election: Election) -> None:
-    scope = (election.year, election.round)
-    with connection.transaction():
-        connection.execute(
-            "DELETE FROM state_votes WHERE year = %s AND round = %s", scope
-        )
-        connection.execute(
-            "DELETE FROM state_totals WHERE year = %s AND round = %s", scope
-        )
-        connection.execute(
-            "DELETE FROM minute_votes WHERE year = %s AND round = %s", scope
-        )
-        connection.execute(
-            "DELETE FROM minute_totals WHERE year = %s AND round = %s", scope
-        )
-        connection.execute("DELETE FROM ballots WHERE year = %s AND round = %s", scope)
+LOAD_SECTIONS = (
+    "SELECT state, municipality_code, zone, number, eligible_voters FROM sections"
+)
+
+
+async def load_catalog(connection: AsyncConnection) -> SectionCatalog:
+    cursor = await connection.execute(LOAD_SECTIONS)
+    rows = await cursor.fetchall()
+    return SectionCatalog(pl.DataFrame(rows, schema=SECTION_COLUMNS, orient="row"))
+
+
+def seed_election_at(
+    database_url: str, election: Election, polls_close: datetime
+) -> None:
+    with psycopg.connect(database_url) as connection:
+        seed_election(connection, election, polls_close)

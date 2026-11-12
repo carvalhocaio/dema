@@ -4,26 +4,24 @@ from pathlib import Path
 
 from dema.cli.common import Subparsers, format_leaders
 from dema.config import get_settings
-from dema.domain.election import Election, ElectionRound
+from dema.domain.election import ElectionRound
+from dema.runtime.active import ActiveRuns
 from dema.sections.catalog import SectionCatalog
+from dema.services.counting import (
+    REFERENCE_SCENARIO,
+    ballots_election,
+    derive_runoff,
+    draw_scenario,
+    simulate,
+)
+from dema.services.runs import publish_ballots
 from dema.simulation.ballots import SimulatedBallots
 from dema.simulation.diagnostics import Checkpoint, counting_timeline
-from dema.simulation.generator import BallotGenerator
-from dema.simulation.runoff import RunoffGenerator
-from dema.simulation.sampler import ScenarioSampler
 from dema.simulation.scenario import Scenario
-from dema.streaming.publisher import BallotPublisher
-from dema.streaming.stream import BallotStream
 from dema.tallying.memory import InMemoryTallyStore
 from dema.tallying.outcome import Verdict
 from dema.tallying.replay import replay
-from dema.wiring import (
-    REFERENCE_SCENARIO,
-    build_signer,
-    load_active_election,
-    open_database,
-    open_redis,
-)
+from dema.wiring import build_signer, open_database, open_redis
 
 SAMPLED = "sampled"
 REFERENCE = "reference"
@@ -66,7 +64,7 @@ def register(commands: Subparsers) -> None:
 def _simulate(args: argparse.Namespace) -> None:
     catalog = SectionCatalog.from_parquet(args.catalog)
     scenario = _scenario(args.scenario, args.seed)
-    ballots = BallotGenerator(scenario, seed=args.seed).generate(catalog)
+    ballots = simulate(scenario, catalog, args.seed)
     ballots.to_parquet(args.output)
     print(f"ballots: {len(ballots):,}")
     for checkpoint in counting_timeline(ballots):
@@ -76,7 +74,7 @@ def _simulate(args: argparse.Namespace) -> None:
 def _scenario(kind: str, seed: int) -> Scenario:
     if kind == REFERENCE:
         return REFERENCE_SCENARIO
-    draw = ScenarioSampler(REFERENCE_SCENARIO).draw(seed)
+    draw = draw_scenario(seed)
     print(f"national strength (seed {seed}):")
     for candidate in REFERENCE_SCENARIO.election.candidates:
         print(f"  {candidate.name:<10}{draw.national[candidate.number]:>8.2%}")
@@ -105,10 +103,7 @@ def _tally(args: argparse.Namespace) -> None:
 
 def _runoff(args: argparse.Namespace) -> None:
     first_round = SimulatedBallots.from_parquet(args.first_round)
-    election = ballots_election(first_round, ElectionRound.FIRST)
-    runoff = RunoffGenerator(REFERENCE_SCENARIO, seed=args.seed).generate(
-        first_round, election
-    )
+    runoff = derive_runoff(first_round, args.seed)
     runoff.ballots.to_parquet(args.output)
     first, second = runoff.election.candidates
     print(f"first round: {format_leaders(runoff.first_round)}  [runoff]")
@@ -128,25 +123,15 @@ async def _publish_async(path: Path, speed: float | None) -> int:
     signer = build_signer(settings)
     ballots = SimulatedBallots.from_parquet(path)
     async with open_database(settings) as connection, open_redis(settings) as redis:
-        record = await load_active_election(settings, connection)
-        stream = BallotStream(redis, record.keys)
-        await stream.ensure_group()
-        publisher = BallotPublisher(
-            stream,
+        record = await ActiveRuns(redis, connection).current()
+        return await publish_ballots(
+            redis,
+            record,
             signer,
-            speed_factor=speed or settings.speed_factor,
-            batch_size=settings.batch_size,
+            ballots,
+            speed or settings.speed_factor,
+            settings.batch_size,
         )
-        return await publisher.publish(ballots.in_release_order(), record.polls_close)
-
-
-def ballots_election(ballots: SimulatedBallots, round_: ElectionRound) -> Election:
-    reference = REFERENCE_SCENARIO.election
-    return Election(
-        year=reference.year,
-        round=round_,
-        candidates=tuple(reference.candidate(n) for n in ballots.candidate_numbers),
-    )
 
 
 def _format_checkpoint(checkpoint: Checkpoint) -> str:

@@ -14,15 +14,11 @@ from dema.config import get_settings
 from dema.domain.ballot import Ballot
 from dema.integrity.signer import BallotSigner
 from dema.sections.catalog import SectionCatalog
-from dema.simulation.presets import DEMA_2026_FIRST_ROUND
-from dema.streaming.keys import ElectionKeys
 from dema.streaming.stream import BallotStream
 from dema.tallying.redis_store import RedisTallyStore
 from dema.wiring import open_redis
+from tests.cli.helpers import active_record
 from tests.helpers import SIGNING_KEY, expected_tally
-
-ELECTION = DEMA_2026_FIRST_ROUND.election
-KEYS = ElectionKeys.for_election(ELECTION)
 
 
 class FakeProcess:
@@ -114,8 +110,9 @@ def test_work_runs_the_async_loop(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def interrupt_when_counted(total: int) -> None:
+    record = await active_record()
     async with open_redis(get_settings()) as redis:
-        store = RedisTallyStore(redis, KEYS, ELECTION)
+        store = RedisTallyStore(redis, record.keys, record.election)
         while (await store.snapshot()).counted_sections < total:
             await asyncio.sleep(0.05)
     os.kill(os.getpid(), signal.SIGINT)
@@ -131,8 +128,9 @@ async def test_work_async_tallies_until_interrupted(
 ) -> None:
     await asyncio.to_thread(main, ["election", "setup", str(catalog_path)])
     signer = BallotSigner(SIGNING_KEY)
+    record = await active_record()
     async with open_redis(get_settings()) as redis:
-        stream = BallotStream(redis, KEYS)
+        stream = BallotStream(redis, record.keys, run_id=record.run.id)
         await stream.ensure_group()
         await stream.publish([signer.sign(ballot) for ballot in small_ballots])
 
@@ -141,5 +139,6 @@ async def test_work_async_tallies_until_interrupted(
     await watcher
 
     async with open_redis(get_settings()) as redis:
-        tally = await RedisTallyStore(redis, KEYS, ELECTION).snapshot()
+        store = RedisTallyStore(redis, record.keys, record.election)
+        tally = await store.snapshot()
     assert tally == expected_tally(small_catalog, small_ballots)

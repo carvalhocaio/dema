@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 import { apiUrl } from "@/lib/api"
 import type { Round } from "@/lib/rounds"
@@ -10,17 +10,19 @@ export const ROUNDS_REFRESH_MS = 5_000
 export type RoundsState = {
   status: "loading" | "ready" | "unavailable"
   rounds: Round[]
+  refresh: () => void
 }
+
+type Loaded = Omit<RoundsState, "refresh">
 
 function sameRounds(a: readonly Round[], b: readonly Round[]): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
 export function useRounds(): RoundsState {
-  const [state, setState] = useState<RoundsState>({
-    status: "loading",
-    rounds: [],
-  })
+  const [state, setState] = useState<Loaded>({ status: "loading", rounds: [] })
+  const [version, setVersion] = useState(0)
+  const refresh = useCallback(() => setVersion((current) => current + 1), [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -48,7 +50,7 @@ export function useRounds(): RoundsState {
       controller.abort()
       clearInterval(timer)
     }
-  }, [])
+  }, [version])
 
-  return state
+  return { ...state, refresh }
 }

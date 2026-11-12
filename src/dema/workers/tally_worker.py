@@ -1,44 +1,34 @@
 import asyncio
 import logging
-from collections.abc import Sequence
-from typing import Protocol
 
 from dema.integrity.signer import BallotSigner, InvalidSignatureError, VerifiedBallot
-from dema.streaming.stream import BallotStream, StreamEntry
-from dema.tallying.store import AsyncTallyStore
+from dema.streaming.stream import StreamEntry
+from dema.workers.lanes import Lane, Lanes
 
 logger = logging.getLogger(__name__)
 
 RETRY_DELAY_SECONDS = 1.0
 
 
-class BallotRepository(Protocol):
-    async def save_many(self, verified: Sequence[VerifiedBallot]) -> int: ...
-
-
 class TallyWorker:
     def __init__(
         self,
-        stream: BallotStream,
+        lanes: Lanes,
         signer: BallotSigner,
-        repository: BallotRepository,
-        store: AsyncTallyStore,
         consumer: str,
         batch_size: int = 500,
         block_ms: int = 1_000,
         stale_after_ms: int = 30_000,
     ) -> None:
-        self._stream = stream
+        self._lanes = lanes
         self._signer = signer
-        self._repository = repository
-        self._store = store
         self._consumer = consumer
         self._batch_size = batch_size
         self._block_ms = block_ms
         self._stale_after_ms = stale_after_ms
+        self._run_id: int | None = None
 
     async def run(self, stop: asyncio.Event) -> None:
-        await self._stream.ensure_group()
         while not stop.is_set():
             try:
                 await self.run_once()
@@ -47,21 +37,34 @@ class TallyWorker:
                 await asyncio.sleep(RETRY_DELAY_SECONDS)
 
     async def run_once(self) -> int:
-        entries = await self._stream.claim_stale(
+        lane = await self._switch()
+        stream = lane.stream
+        entries = await stream.claim_stale(
             self._consumer, self._stale_after_ms, self._batch_size
-        ) or await self._stream.read(self._consumer, self._batch_size, self._block_ms)
+        ) or await stream.read(self._consumer, self._batch_size, self._block_ms)
         verified: list[VerifiedBallot] = []
         for entry in entries:
+            if entry.run_id is not None and entry.run_id != lane.run_id:
+                logger.info("skipped %s from run %s", entry.id, entry.run_id)
+                continue
             result = self._verify(entry)
             if isinstance(result, str):
                 logger.warning("rejected %s: %s", entry.id, result)
-                await self._stream.reject(entry, result)
+                await stream.reject(entry, result)
             else:
                 verified.append(result)
-        await self._repository.save_many(verified)
-        await self._store.add_many([v.ballot for v in verified])
-        await self._stream.acknowledge(entries)
+        await lane.repository.save_many(verified)
+        await lane.store.add_many([v.ballot for v in verified])
+        await stream.acknowledge(entries)
         return len(entries)
+
+    async def _switch(self) -> Lane:
+        lane = await self._lanes.current()
+        if lane.run_id != self._run_id:
+            await lane.stream.ensure_group()
+            self._run_id = lane.run_id
+            logger.info("consuming run %s", lane.run_id)
+        return lane
 
     def _verify(self, entry: StreamEntry) -> VerifiedBallot | str:
         if entry.signed is None:

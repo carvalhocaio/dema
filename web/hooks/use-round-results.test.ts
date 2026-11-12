@@ -16,7 +16,7 @@ describe("useRoundResults for the live round", () => {
     const results = makeResults({ round: 2 })
     const fetchMock = stubFetch(respond(200, results))
 
-    const { result } = renderHook(() => useRoundResults(2, true))
+    const { result } = renderHook(() => useRoundResults(2, true, vi.fn()))
 
     expect(result.current).toEqual({
       results: null,
@@ -36,7 +36,7 @@ describe("useRoundResults for the live round", () => {
 
   it("flags a pending setup on 503 until the stream delivers results", async () => {
     stubFetch(respond(503))
-    const { result } = renderHook(() => useRoundResults(1, true))
+    const { result } = renderHook(() => useRoundResults(1, true, vi.fn()))
     await waitFor(() => expect(result.current.setup).toBe("pending"))
 
     const results = makeResults()
@@ -51,7 +51,7 @@ describe("useRoundResults for the live round", () => {
 
   it("keeps a ready election when a late 503 arrives", async () => {
     stubFetch(respond(200, makeResults()), respond(503))
-    const { result } = renderHook(() => useRoundResults(1, true))
+    const { result } = renderHook(() => useRoundResults(1, true, vi.fn()))
     await waitFor(() => expect(result.current.setup).toBe("ready"))
 
     act(() => FakeEventSource.latest().open())
@@ -62,7 +62,7 @@ describe("useRoundResults for the live round", () => {
 
   it("leaves the connection to the stream when snapshots fail", async () => {
     const fetchMock = stubFetch(respond(500), new TypeError("offline"))
-    const { result } = renderHook(() => useRoundResults(1, true))
+    const { result } = renderHook(() => useRoundResults(1, true, vi.fn()))
 
     act(() => FakeEventSource.latest().open())
 
@@ -72,7 +72,7 @@ describe("useRoundResults for the live round", () => {
 
   it("follows the connection through outages and reconnections", () => {
     stubFetch(respond(500), respond(500), respond(500))
-    const { result } = renderHook(() => useRoundResults(1, true))
+    const { result } = renderHook(() => useRoundResults(1, true, vi.fn()))
     const source = FakeEventSource.latest()
 
     act(() => source.fail(FakeEventSource.CONNECTING))
@@ -100,7 +100,9 @@ describe("useRoundResults for the live round", () => {
       "fetch",
       vi.fn(() => new Promise<FetchResponse>((resolve) => (release = resolve)))
     )
-    const { result, unmount } = renderHook(() => useRoundResults(1, true))
+    const { result, unmount } = renderHook(() =>
+      useRoundResults(1, true, vi.fn())
+    )
     const source = FakeEventSource.latest()
 
     unmount()
@@ -116,7 +118,7 @@ describe("useRoundResults for a finished round", () => {
     const results = makeResults({ verdict: "runoff", finalists: [27, 99] })
     stubFetch(respond(200, results))
 
-    const { result } = renderHook(() => useRoundResults(1, false))
+    const { result } = renderHook(() => useRoundResults(1, false, vi.fn()))
 
     await waitFor(() =>
       expect(result.current).toEqual({
@@ -131,8 +133,20 @@ describe("useRoundResults for a finished round", () => {
   it("reports an unreachable archive", async () => {
     stubFetch(new TypeError("offline"))
 
-    const { result } = renderHook(() => useRoundResults(1, false))
+    const { result } = renderHook(() => useRoundResults(1, false, vi.fn()))
 
     await waitFor(() => expect(result.current.connection).toBe("unavailable"))
+  })
+})
+
+describe("useRoundResults run events", () => {
+  it("announces a new run on the live stream", async () => {
+    stubFetch(respond(200, makeResults()))
+    const onRun = vi.fn()
+    renderHook(() => useRoundResults(1, true, onRun))
+
+    act(() => FakeEventSource.latest().announce({ id: 5, round: 1, seed: 9 }))
+
+    expect(onRun).toHaveBeenCalledWith({ id: 5, round: 1, seed: 9 })
   })
 })

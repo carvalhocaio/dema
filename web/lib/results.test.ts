@@ -65,6 +65,7 @@ function makeResults(overrides: Partial<Results> = {}): Results {
       votes_to_majority: 51,
       runoff_gap: 150,
     },
+    run: null,
     ...overrides,
   }
 }

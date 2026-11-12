@@ -55,6 +55,7 @@ export function makeResults(overrides: Partial<Results> = {}): Results {
       votes_to_majority: 51,
       runoff_gap: 150,
     },
+    run: { id: 1, round: 1, seed: 40 },
     ...overrides,
   }
 }

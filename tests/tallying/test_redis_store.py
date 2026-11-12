@@ -14,7 +14,7 @@ from tests.helpers import expected_tally
 pytestmark = pytest.mark.integration
 
 ELECTION = DEMA_2026_FIRST_ROUND.election
-KEYS = ElectionKeys.for_election(ELECTION)
+KEYS = ElectionKeys("dema:test")
 
 
 @pytest.fixture

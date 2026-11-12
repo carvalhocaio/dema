@@ -2,11 +2,14 @@ from collections.abc import Callable
 from typing import Protocol
 
 from psycopg import AsyncConnection
+from redis.asyncio import Redis
 
 from dema.api.schemas import ResultsView
-from dema.domain.election import Election, ElectionRound
+from dema.director.control import ControlStream, CountRequest
+from dema.domain.run import Run
+from dema.runtime.active import ActiveRuns
 from dema.storage.ballots import PostgresBallotRepository
-from dema.storage.elections import ElectionRecord, ElectionRepository
+from dema.storage.elections import ElectionRecord
 from dema.tallying.outcome import decide
 from dema.tallying.states import StateTally
 from dema.tallying.tally import Tally
@@ -17,65 +20,67 @@ class SnapshotSource(Protocol):
     async def snapshot(self) -> Tally: ...
 
 
-SnapshotFactory = Callable[[Election], SnapshotSource]
+SnapshotFactory = Callable[[ElectionRecord], SnapshotSource]
 
 
 class Archive(Protocol):
-    async def rounds(self, year: int) -> list[ElectionRound]: ...
+    async def family(self) -> tuple[ElectionRecord, ...]: ...
 
-    async def load(self, year: int, round_: ElectionRound) -> ElectionRecord: ...
+    async def current_run(self) -> Run | None: ...
 
-    async def tally(self, election: Election) -> Tally: ...
+    async def request_run(self, seed: int, speed: float | None) -> Run: ...
 
-    async def timeline(self, election: Election) -> Timeline: ...
+    async def tally(self, record: ElectionRecord) -> Tally: ...
 
-    async def states(self, election: Election) -> tuple[StateTally, ...]: ...
+    async def timeline(self, record: ElectionRecord) -> Timeline: ...
+
+    async def states(self, record: ElectionRecord) -> tuple[StateTally, ...]: ...
 
 
 class PostgresArchive:
-    def __init__(self, connection: AsyncConnection) -> None:
+    def __init__(self, connection: AsyncConnection, redis: Redis, year: int) -> None:
         self._connection = connection
-        self._elections = ElectionRepository(connection)
+        self._active = ActiveRuns(redis, connection)
+        self._control = ControlStream(redis)
+        self._year = year
 
-    async def rounds(self, year: int) -> list[ElectionRound]:
-        return await self._elections.rounds(year)
+    async def family(self) -> tuple[ElectionRecord, ...]:
+        return await self._active.family()
 
-    async def load(self, year: int, round_: ElectionRound) -> ElectionRecord:
-        return await self._elections.load(year, round_)
+    async def current_run(self) -> Run | None:
+        return await self._active.runs.active()
 
-    async def tally(self, election: Election) -> Tally:
-        return await PostgresBallotRepository(self._connection, election).tally()
+    async def request_run(self, seed: int, speed: float | None) -> Run:
+        run = await self._active.runs.create_first_round(self._year, seed)
+        await self._control.request(CountRequest(run_id=run.id, speed=speed))
+        return run
 
-    async def timeline(self, election: Election) -> Timeline:
-        return await PostgresBallotRepository(self._connection, election).timeline()
+    async def tally(self, record: ElectionRecord) -> Tally:
+        return await self._repository(record).tally()
 
-    async def states(self, election: Election) -> tuple[StateTally, ...]:
-        return await PostgresBallotRepository(self._connection, election).states()
+    async def timeline(self, record: ElectionRecord) -> Timeline:
+        return await self._repository(record).timeline()
+
+    async def states(self, record: ElectionRecord) -> tuple[StateTally, ...]:
+        return await self._repository(record).states()
+
+    def _repository(self, record: ElectionRecord) -> PostgresBallotRepository:
+        return PostgresBallotRepository(
+            self._connection, record.election, record.run.id
+        )
 
 
 class ActiveRound:
-    def __init__(
-        self,
-        archive: Archive,
-        snapshots: SnapshotFactory,
-        year: int,
-        round_: ElectionRound,
-    ) -> None:
+    def __init__(self, archive: Archive, snapshots: SnapshotFactory) -> None:
         self._archive = archive
         self._snapshots = snapshots
-        self._year = year
-        self._round = round_
-        self._election: Election | None = None
-        self._source: SnapshotSource | None = None
+        self._sources: dict[int, SnapshotSource] = {}
 
     async def results(self) -> ResultsView:
-        election, source = await self._resolve()
+        record = (await self._archive.family())[-1]
+        source = self._sources.get(record.run.id)
+        if source is None:
+            source = self._sources[record.run.id] = self._snapshots(record)
         tally = await source.snapshot()
-        return ResultsView.build(election, tally, decide(election, tally))
-
-    async def _resolve(self) -> tuple[Election, SnapshotSource]:
-        if self._election is None or self._source is None:
-            record = await self._archive.load(self._year, self._round)
-            self._election = record.election
-            self._source = self._snapshots(record.election)
-        return self._election, self._source
+        election = record.election
+        return ResultsView.build(election, tally, decide(election, tally), record.run)

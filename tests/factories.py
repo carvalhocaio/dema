@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 from dema.domain.ballot import Ballot
 from dema.domain.candidate import Candidate
 from dema.domain.election import Election, ElectionRound
+from dema.domain.run import Run, RunStatus
 from dema.domain.section import SectionKey
 from dema.domain.state import State
 
@@ -50,4 +51,24 @@ def make_ballot(
         blank_votes=blank_votes,
         null_votes=null_votes,
         issued_at=datetime(2026, 10, 4, 17, 0, tzinfo=UTC),
+    )
+
+
+def make_run(
+    run_id: int = 7,
+    round_: ElectionRound = ElectionRound.FIRST,
+    seed: int = 40,
+    candidates: tuple[int, ...] = (KEONS.number, LISDEN.number, NICO.number),
+    parent_id: int | None = None,
+) -> Run:
+    return Run(
+        id=run_id,
+        year=2026,
+        round=round_,
+        seed=seed,
+        status=RunStatus.COUNTING,
+        candidates=candidates,
+        parent_id=parent_id,
+        started_at=datetime(2026, 10, 4, 20, tzinfo=UTC),
+        finished_at=None,
     )

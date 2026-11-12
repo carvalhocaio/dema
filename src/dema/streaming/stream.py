@@ -17,15 +17,25 @@ StreamMessages = list[tuple[bytes, list[tuple[bytes, Fields]]]]
 class StreamEntry:
     id: bytes
     signed: SignedBallot | None
+    run_id: int | None = None
 
 
 class BallotStream:
     def __init__(
-        self, redis: Redis, keys: ElectionKeys, group: str = CONSUMER_GROUP
+        self,
+        redis: Redis,
+        keys: ElectionKeys,
+        group: str = CONSUMER_GROUP,
+        run_id: int | None = None,
     ) -> None:
         self._redis = redis
         self._keys = keys
         self._group = group
+        self._run_id = run_id
+
+    @property
+    def run_id(self) -> int | None:
+        return self._run_id
 
     async def ensure_group(self) -> None:
         try:
@@ -41,10 +51,13 @@ class BallotStream:
             return 0
         async with self._redis.pipeline(transaction=False) as pipe:
             for ballot in ballots:
-                pipe.xadd(
-                    self._keys.ballots,
-                    {"payload": ballot.payload, "signature": ballot.signature},
-                )
+                fields: dict[FieldT, EncodableT] = {
+                    "payload": ballot.payload,
+                    "signature": ballot.signature,
+                }
+                if self._run_id is not None:
+                    fields["run"] = self._run_id
+                pipe.xadd(self._keys.ballots, fields)
             await pipe.execute()
         return len(ballots)
 
@@ -88,8 +101,9 @@ class BallotStream:
 def _entry(entry_id: bytes, fields: Fields) -> StreamEntry:
     payload = fields.get(b"payload")
     signature = fields.get(b"signature")
+    run = fields.get(b"run")
+    run_id = None if run is None else int(run)
     if payload is None or signature is None:
-        return StreamEntry(id=entry_id, signed=None)
-    return StreamEntry(
-        id=entry_id, signed=SignedBallot(payload=payload, signature=signature.decode())
-    )
+        return StreamEntry(id=entry_id, signed=None, run_id=run_id)
+    signed = SignedBallot(payload=payload, signature=signature.decode())
+    return StreamEntry(id=entry_id, signed=signed, run_id=run_id)

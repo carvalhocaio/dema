@@ -24,7 +24,9 @@ export function stubFetch(...responses: Array<FetchResponse | Error>) {
 export function routeFetch(
   routes: Record<string, () => FetchResponse | Error>
 ) {
-  const fetchMock = vi.fn(async (url: string) => {
+  const fetchMock = vi.fn<
+    (url: string, init?: RequestInit) => Promise<FetchResponse>
+  >(async (url) => {
     const path = new URL(url).pathname
     const route = routes[path]
     const next = route ? route() : respond(404)

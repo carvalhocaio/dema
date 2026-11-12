@@ -12,11 +12,14 @@ from redis.asyncio import Redis
 
 from dema.config import get_settings
 from dema.domain.ballot import Ballot
+from dema.domain.election import ElectionRound
+from dema.domain.run import Run
 from dema.sections.catalog import SectionCatalog
 from dema.sections.synthetic import SyntheticSectionSource
 from dema.simulation.generator import BallotGenerator
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
 from dema.storage.migrator import Migrator
+from dema.storage.runs import RunRepository
 from dema.storage.seed import replace_sections, seed_election
 
 TEST_DATABASE = "dema_test"
@@ -120,3 +123,15 @@ async def redis_client(redis_url: str) -> AsyncIterator[Redis]:
     yield client
     await client.flushdb()
     await client.aclose()
+
+
+@pytest.fixture
+async def first_run(async_connection: AsyncConnection) -> Run:
+    runs = RunRepository(async_connection)
+    run = await runs.create(
+        2026,
+        ElectionRound.FIRST,
+        7,
+        sorted(DEMA_2026_FIRST_ROUND.election.candidate_numbers),
+    )
+    return await runs.activate(run.id)

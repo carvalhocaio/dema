@@ -9,36 +9,39 @@ from dema.config import get_settings
 from dema.domain.ballot import Ballot
 from dema.integrity.signer import BallotSigner
 from dema.sections.catalog import SectionCatalog
-from dema.simulation.presets import DEMA_2026_FIRST_ROUND
 from dema.storage.ballots import PostgresBallotRepository
-from dema.streaming.keys import ElectionKeys
 from dema.tallying.redis_store import RedisTallyStore
 from dema.tallying.tally import Tally
 from dema.wiring import open_database, open_redis
+from tests.cli.helpers import active_record
 from tests.helpers import SIGNING_KEY, expected_tally
 
 pytestmark = pytest.mark.integration
 
-ELECTION = DEMA_2026_FIRST_ROUND.election
-KEYS = ElectionKeys.for_election(ELECTION)
 WATCH_INTERVAL = 0.25
 
 
 async def add_to_redis(ballots: list[Ballot]) -> None:
+    record = await active_record()
     async with open_redis(get_settings()) as redis:
-        await RedisTallyStore(redis, KEYS, ELECTION).add_many(ballots)
+        await RedisTallyStore(redis, record.keys, record.election).add_many(ballots)
 
 
 async def snapshot() -> Tally:
+    record = await active_record()
     async with open_redis(get_settings()) as redis:
-        return await RedisTallyStore(redis, KEYS, ELECTION).snapshot()
+        return await RedisTallyStore(redis, record.keys, record.election).snapshot()
 
 
 async def save_to_postgres(ballots: list[Ballot]) -> None:
+    record = await active_record()
     signer = BallotSigner(SIGNING_KEY)
     verified = [signer.verify(signer.sign(ballot)) for ballot in ballots]
     async with open_database(get_settings()) as connection:
-        await PostgresBallotRepository(connection, ELECTION).save_many(verified)
+        repository = PostgresBallotRepository(
+            connection, record.election, record.run.id
+        )
+        await repository.save_many(verified)
 
 
 def test_watch_prints_changes_until_counting_ends(

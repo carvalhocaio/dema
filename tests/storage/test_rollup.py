@@ -5,10 +5,12 @@ import pytest
 from psycopg import AsyncConnection
 
 from dema.domain.ballot import Ballot
+from dema.domain.run import Run
 from dema.sections.catalog import SectionCatalog
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
 from dema.storage.ballots import PostgresBallotRepository
-from dema.storage.migrator import Migrator
+from dema.storage.migrator import Migrator, discover
+from dema.storage.seed import replace_sections, seed_election
 from dema.tallying.outcome import Verdict
 from tests.storage.test_ballots import verify_all
 
@@ -50,31 +52,42 @@ GROUP BY 1, 2 ORDER BY 1, 2
 STATE_VOTES = "SELECT state, candidate, votes FROM state_votes ORDER BY 1, 2"
 
 
+PAIRS = (
+    (ROLLUP_TOTALS, DIRECT_TOTALS),
+    (ROLLUP_VOTES, DIRECT_VOTES),
+    (STATE_TOTALS, DIRECT_STATE_TOTALS),
+    (STATE_VOTES, DIRECT_STATE_VOTES),
+)
+
+
+def normalized(rows: list[tuple]) -> list[tuple]:
+    return [tuple(int(v) if isinstance(v, int) else v for v in row) for row in rows]
+
+
 async def rows(connection: AsyncConnection, query: str) -> list[tuple]:
     cursor = await connection.execute(query.encode())
-    return [
-        tuple(int(v) if isinstance(v, int) else v for v in row)
-        for row in await cursor.fetchall()
-    ]
+    return normalized(await cursor.fetchall())
 
 
 async def assert_rollup_matches_ballots(connection: AsyncConnection) -> None:
-    assert await rows(connection, ROLLUP_TOTALS) == await rows(
-        connection, DIRECT_TOTALS
-    )
-    assert await rows(connection, ROLLUP_VOTES) == await rows(connection, DIRECT_VOTES)
+    for rollup, direct in PAIRS:
+        assert await rows(connection, rollup) == await rows(connection, direct)
     assert await rows(connection, ROLLUP_TOTALS)
-    assert await rows(connection, STATE_TOTALS) == await rows(
-        connection, DIRECT_STATE_TOTALS
-    )
-    assert await rows(connection, STATE_VOTES) == await rows(
-        connection, DIRECT_STATE_VOTES
-    )
+
+
+def assert_rollup_matches_ballots_now(connection: psycopg.Connection) -> None:
+    for rollup, direct in PAIRS:
+        assert normalized(connection.execute(rollup.encode()).fetchall()) == (
+            normalized(connection.execute(direct.encode()).fetchall())
+        )
+    assert connection.execute(ROLLUP_TOTALS.encode()).fetchall()
 
 
 @pytest.fixture
-def repository(async_connection: AsyncConnection) -> PostgresBallotRepository:
-    return PostgresBallotRepository(async_connection, ELECTION)
+def repository(
+    async_connection: AsyncConnection, first_run: Run
+) -> PostgresBallotRepository:
+    return PostgresBallotRepository(async_connection, ELECTION, first_run.id)
 
 
 async def test_rollup_follows_saved_ballots_including_duplicates(
@@ -92,12 +105,13 @@ async def test_rollup_follows_saved_ballots_including_duplicates(
 async def test_concurrent_workers_keep_the_rollup_exact(
     database_url: str,
     async_connection: AsyncConnection,
+    first_run: Run,
     small_ballots: list[Ballot],
 ) -> None:
     async def worker(batches: list[list[Ballot]]) -> None:
         connection = await AsyncConnection.connect(database_url, autocommit=True)
         async with connection:
-            repository = PostgresBallotRepository(connection, ELECTION)
+            repository = PostgresBallotRepository(connection, ELECTION, first_run.id)
             for batch in batches:
                 await repository.save_many(verify_all(batch))
 
@@ -149,25 +163,51 @@ async def test_timeline_is_empty_before_any_ballot(
     assert timeline.decided_at is None
 
 
-async def test_migration_backfills_ballots_saved_before_it(
-    repository: PostgresBallotRepository,
-    async_connection: AsyncConnection,
-    seeded: psycopg.Connection,
+def test_migrations_backfill_ballots_saved_before_runs(
+    connection: psycopg.Connection,
+    small_catalog: SectionCatalog,
     small_ballots: list[Ballot],
 ) -> None:
-    await repository.save_many(verify_all(small_ballots))
-    await async_connection.execute(
-        "DROP TABLE minute_votes, minute_totals, state_votes, state_totals; "
-        "DELETE FROM schema_migrations WHERE version IN "
-        "('0002_minute_rollup', '0003_state_rollup')"
-    )
+    initial, *_ = discover()
+    Migrator(connection, [initial]).migrate()
+    seed_election(connection, ELECTION, DEMA_2026_FIRST_ROUND.polls_close)
+    replace_sections(connection, small_catalog)
+    with connection.transaction(), connection.cursor() as cursor:
+        cursor.executemany(
+            "INSERT INTO ballots (year, round, section, blank_votes, null_votes, "
+            "issued_at, payload, signature) "
+            "VALUES (2026, 1, %s, %s, %s, %s, '', repeat('0', 64))",
+            [
+                (str(b.section), b.blank_votes, b.null_votes, b.issued_at)
+                for b in small_ballots
+            ],
+        )
+        cursor.executemany(
+            "INSERT INTO ballot_votes (year, round, section, candidate, votes) "
+            "VALUES (2026, 1, %s, %s, %s)",
+            [
+                (str(b.section), number, votes)
+                for b in small_ballots
+                for number, votes in b.nominal_votes.items()
+            ],
+        )
 
-    assert await asyncio.to_thread(Migrator(seeded).migrate) == [
+    assert Migrator(connection).migrate() == [
         "0002_minute_rollup",
         "0003_state_rollup",
+        "0004_runs",
     ]
 
-    await assert_rollup_matches_ballots(async_connection)
+    [(run_id, status, candidates)] = connection.execute(
+        "SELECT id, status, candidates FROM runs"
+    ).fetchall()
+    assert status == "complete"
+    assert candidates == sorted(ELECTION.candidate_numbers)
+    assert connection.execute("SELECT run_id FROM active_run").fetchall() == [(run_id,)]
+    assert connection.execute("SELECT DISTINCT run_id FROM ballots").fetchall() == [
+        (run_id,)
+    ]
+    assert_rollup_matches_ballots_now(connection)
 
 
 async def test_states_report_progress_and_leader_per_state(

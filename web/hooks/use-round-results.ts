@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useReducer } from "react"
+import { useEffect, useReducer, useRef } from "react"
 
 import { apiUrl } from "@/lib/api"
 import type { Results } from "@/lib/results"
+import type { RunRef } from "@/lib/runs"
 
 export type Connection =
   "connecting" | "live" | "reconnecting" | "unavailable" | "final"
@@ -71,8 +72,17 @@ async function fetchSnapshot(
 
 const UNREACHABLE: Action = { type: "error", retrying: false }
 
-export function useRoundResults(round: number, live: boolean): ResultsState {
+export function useRoundResults(
+  round: number,
+  live: boolean,
+  onRun: (run: RunRef) => void
+): ResultsState {
   const [state, dispatch] = useReducer(reducer, initialState)
+  const runListener = useRef(onRun)
+
+  useEffect(() => {
+    runListener.current = onRun
+  }, [onRun])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -105,6 +115,9 @@ export function useRoundResults(round: number, live: boolean): ResultsState {
     source.addEventListener("results", (event: MessageEvent<string>) => {
       const results = JSON.parse(event.data) as Results
       dispatch({ type: "results", results, connection: "live" })
+    })
+    source.addEventListener("run", (event: MessageEvent<string>) => {
+      runListener.current(JSON.parse(event.data) as RunRef)
     })
     loadSnapshot("live")
 

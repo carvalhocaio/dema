@@ -25,5 +25,5 @@ def test_publish_streams_every_ballot(
     main(["ballots", "publish", str(ballots_path), "--speed", "1e9"])
 
     assert capsys.readouterr().out == f"published {len(small_catalog):,} ballots\n"
-    stream = redis.Redis.from_url(redis_url).xlen("dema:2026:1:ballots")
+    stream = redis.Redis.from_url(redis_url).xlen("dema:2026:1:1:ballots")
     assert stream == len(small_catalog)

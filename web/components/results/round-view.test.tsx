@@ -23,6 +23,7 @@ describe("RoundView", () => {
         round={{ round: 1, status: "live" }}
         hasFirstRound
         onReport={onReport}
+        onRun={vi.fn()}
       />
     )
 
@@ -42,6 +43,7 @@ describe("RoundView", () => {
         round={{ round: 2, status: "live" }}
         hasFirstRound={false}
         onReport={vi.fn()}
+        onRun={vi.fn()}
       />
     )
 
@@ -63,6 +65,7 @@ describe("RoundView", () => {
         round={{ round: 1, status: "final" }}
         hasFirstRound
         onReport={onReport}
+        onRun={vi.fn()}
       />
     )
 

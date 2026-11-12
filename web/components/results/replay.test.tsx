@@ -63,6 +63,7 @@ function renderFinishedRound(clock: ReplayClock) {
       round={{ round: 1, status: "live" }}
       hasFirstRound
       onReport={onReport}
+      onRun={vi.fn()}
       replayClock={clock}
     />
   )
@@ -141,6 +142,7 @@ describe("ReplayControls", () => {
         round={{ round: 1, status: "live" }}
         hasFirstRound
         onReport={noop}
+        onRun={vi.fn()}
       />
     )
 
@@ -202,6 +204,7 @@ describe("RoundView replay", () => {
         round={{ round: 1, status: "final" }}
         hasFirstRound
         onReport={noop}
+        onRun={vi.fn()}
         replayClock={control.clock}
       />
     )

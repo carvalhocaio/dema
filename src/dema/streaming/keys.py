@@ -1,8 +1,11 @@
 from dataclasses import dataclass
 
-from dema.domain.election import Election, ElectionRound
+from dema.domain.run import Run
 
 CONSUMER_GROUP = "tallying"
+ACTIVE_RUN_KEY = "dema:active_run"
+CONTROL_STREAM = "dema:control"
+DIRECTOR_GROUP = "director"
 
 
 @dataclass(frozen=True, slots=True)
@@ -10,12 +13,8 @@ class ElectionKeys:
     prefix: str
 
     @classmethod
-    def for_election(cls, election: Election) -> "ElectionKeys":
-        return cls.for_round(election.year, election.round)
-
-    @classmethod
-    def for_round(cls, year: int, round_: ElectionRound) -> "ElectionKeys":
-        return cls(f"dema:{year}:{round_}")
+    def for_run(cls, run: Run) -> "ElectionKeys":
+        return cls(f"dema:{run.year}:{run.round}:{run.id}")
 
     @property
     def ballots(self) -> str:

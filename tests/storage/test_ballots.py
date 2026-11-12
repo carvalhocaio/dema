@@ -2,10 +2,12 @@ import pytest
 from psycopg import AsyncConnection
 
 from dema.domain.ballot import Ballot
+from dema.domain.run import Run
 from dema.integrity.signer import BallotSigner, VerifiedBallot
 from dema.sections.catalog import SectionCatalog
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
 from dema.storage.ballots import PostgresBallotRepository
+from dema.storage.runs import RunRepository
 from tests.helpers import SIGNING_KEY, expected_tally
 
 pytestmark = pytest.mark.integration
@@ -17,8 +19,12 @@ def verify_all(ballots: list[Ballot]) -> list[VerifiedBallot]:
 
 
 @pytest.fixture
-def repository(async_connection: AsyncConnection) -> PostgresBallotRepository:
-    return PostgresBallotRepository(async_connection, DEMA_2026_FIRST_ROUND.election)
+def repository(
+    async_connection: AsyncConnection, first_run: Run
+) -> PostgresBallotRepository:
+    return PostgresBallotRepository(
+        async_connection, DEMA_2026_FIRST_ROUND.election, first_run.id
+    )
 
 
 async def test_saves_ballots_with_votes(
@@ -72,3 +78,18 @@ async def test_deduplicates_ballots_within_a_batch(
     assert await repository.save_many(verified + verified) == 3
     cursor = await async_connection.execute("SELECT count(*) FROM ballot_votes")
     assert await cursor.fetchone() == (15,)
+
+
+async def test_only_the_active_run_accepts_ballots(
+    repository: PostgresBallotRepository,
+    async_connection: AsyncConnection,
+    first_run: Run,
+    small_ballots: list[Ballot],
+) -> None:
+    runs = RunRepository(async_connection)
+    newer = await runs.create(2026, first_run.round, 8, first_run.candidates)
+    await runs.activate(newer.id)
+
+    assert await repository.save_many(verify_all(small_ballots[:5])) == 0
+    cursor = await async_connection.execute("SELECT count(*) FROM ballots")
+    assert await cursor.fetchone() == (0,)

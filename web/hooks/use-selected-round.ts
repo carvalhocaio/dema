@@ -22,9 +22,13 @@ function serverSearch(): string {
   return ""
 }
 
-export function useSelectedRound(
-  rounds: readonly Round[]
-): [Round | undefined, (round: number) => void] {
+export type RoundSelection = {
+  selected: Round | undefined
+  select: (round: number) => void
+  follow: () => void
+}
+
+export function useSelectedRound(rounds: readonly Round[]): RoundSelection {
   const search = useSyncExternalStore(subscribe, readSearch, serverSearch)
   const [chosen, setChosen] = useState<number | null>(null)
 
@@ -35,5 +39,17 @@ export function useSelectedRound(
     window.history.replaceState(window.history.state, "", url)
   }, [])
 
-  return [initialRound(rounds, chosen ?? parseRoundParam(search)), select]
+  const follow = useCallback(() => {
+    setChosen(null)
+    const url = new URL(window.location.href)
+    url.searchParams.delete(ROUND_PARAM)
+    window.history.replaceState(window.history.state, "", url)
+    window.dispatchEvent(new PopStateEvent("popstate"))
+  }, [])
+
+  return {
+    selected: initialRound(rounds, chosen ?? parseRoundParam(search)),
+    select,
+    follow,
+  }
 }

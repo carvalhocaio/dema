@@ -1,4 +1,5 @@
 import type { Results } from "@/lib/results"
+import type { RunRef } from "@/lib/runs"
 
 type Listener = (event: MessageEvent<string>) => void
 
@@ -41,6 +42,11 @@ export class FakeEventSource {
   emit(results: Results): void {
     const event = new MessageEvent("results", { data: JSON.stringify(results) })
     this.listeners.get("results")?.(event)
+  }
+
+  announce(run: RunRef): void {
+    const event = new MessageEvent("run", { data: JSON.stringify(run) })
+    this.listeners.get("run")?.(event)
   }
 
   fail(readyState: number): void {

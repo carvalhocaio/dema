@@ -6,14 +6,19 @@ import pytest
 import redis
 
 from dema.cli import main
-from dema.config import get_settings
 from dema.sections.catalog import SectionCatalog
 from dema.simulation.runoff import SECOND_ROUND_POLLS_CLOSE
 
 pytestmark = pytest.mark.integration
 
 
-def test_setup_seeds_sections_and_resets_the_tally(
+def runs(connection: psycopg.Connection) -> list[tuple]:
+    return connection.execute(
+        "SELECT id, round, seed, status, candidates, parent_id FROM runs ORDER BY id"
+    ).fetchall()
+
+
+def test_setup_seeds_sections_and_opens_an_active_run(
     migrated: psycopg.Connection,
     cli_env: None,
     redis_url: str,
@@ -21,82 +26,105 @@ def test_setup_seeds_sections_and_resets_the_tally(
     small_catalog: SectionCatalog,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    main(["election", "setup", str(catalog_path)])
+    main(["election", "setup", str(catalog_path), "--seed", "40"])
 
     output = capsys.readouterr().out
-    assert "election 2026/1 ready" in output
+    assert "election 2026/1 ready (run #1)" in output
     assert f"sections:   {len(small_catalog):>13,}" in output
     [(sections,)] = migrated.execute("SELECT count(*) FROM sections").fetchall()
     assert sections == len(small_catalog)
-    meta = redis.Redis.from_url(redis_url).hgetall("dema:2026:1:meta")
+    assert runs(migrated) == [(1, 1, 40, "counting", [12, 27, 31, 44, 99], None)]
+    client = redis.Redis.from_url(redis_url)
+    assert client.get("dema:active_run") == b"1"
+    meta = client.hgetall("dema:2026:1:1:meta")
     assert int(meta[b"total_electorate"]) == small_catalog.total_electorate
-
-
-def count_ballots(connection: psycopg.Connection, round_: int) -> int:
-    [(count,)] = connection.execute(
-        "SELECT count(*) FROM ballots WHERE round = %s", (round_,)
-    ).fetchall()
-    return count
 
 
 def keep_first_round_ballot(connection: psycopg.Connection) -> None:
     connection.execute(
-        "INSERT INTO ballots (year, round, section, blank_votes, null_votes, "
-        "issued_at, payload, signature) "
-        "SELECT 2026, 1, key, 0, 0, now(), '', repeat('0', 64) "
+        "INSERT INTO ballots (run_id, year, round, section, blank_votes, "
+        "null_votes, issued_at, payload, signature) "
+        "SELECT 1, 2026, 1, key, 0, 0, now(), '', repeat('0', 64) "
         "FROM sections LIMIT 1"
     )
     connection.commit()
 
 
-def test_setup_prepares_the_runoff_without_touching_the_first_round(
+def count_ballots(connection: psycopg.Connection, run_id: int) -> int:
+    [(count,)] = connection.execute(
+        "SELECT count(*) FROM ballots WHERE run_id = %s", (run_id,)
+    ).fetchall()
+    return count
+
+
+def test_a_new_setup_supersedes_the_previous_run_and_keeps_its_ballots(
+    migrated: psycopg.Connection,
+    cli_env: None,
+    catalog_path: Path,
+) -> None:
+    main(["election", "setup", str(catalog_path)])
+    keep_first_round_ballot(migrated)
+
+    main(["election", "setup", str(catalog_path)])
+
+    assert [(run[0], run[3]) for run in runs(migrated)] == [
+        (1, "superseded"),
+        (2, "counting"),
+    ]
+    assert count_ballots(migrated, 1) == 1
+
+
+def test_setup_opens_the_runoff_as_a_child_of_the_first_round(
     migrated: psycopg.Connection,
     cli_env: None,
     redis_url: str,
     catalog_path: Path,
     runoff_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     main(["election", "setup", str(catalog_path)])
     keep_first_round_ballot(migrated)
-    monkeypatch.setenv("DEMA_ROUND", "2")
-    get_settings.cache_clear()
     capsys.readouterr()
 
-    main(["election", "setup", str(catalog_path), "--ballots", str(runoff_path)])
+    main(
+        [
+            "election",
+            "setup",
+            str(catalog_path),
+            "--round",
+            "2",
+            "--ballots",
+            str(runoff_path),
+        ]
+    )
 
-    output = capsys.readouterr().out
-    assert "election 2026/2 ready" in output
-    assert "candidates: Keons x Nico" in output
+    assert "election 2026/2 ready (run #2)" in capsys.readouterr().out
+    assert runs(migrated)[1] == (2, 2, 0, "counting", [27, 99], 1)
     assert count_ballots(migrated, 1) == 1
     [(polls_close,)] = migrated.execute(
         "SELECT polls_close FROM elections WHERE round = 2"
     ).fetchall()
     assert polls_close == SECOND_ROUND_POLLS_CLOSE
-    assert redis.Redis.from_url(redis_url).exists("dema:2026:2:meta")
+    assert redis.Redis.from_url(redis_url).exists("dema:2026:2:2:meta")
 
 
-def test_runoff_setup_needs_the_first_round(
+def test_runoff_setup_needs_an_active_first_round(
     migrated: psycopg.Connection,
     cli_env: None,
     catalog_path: Path,
     runoff_path: Path,
 ) -> None:
-    with pytest.raises(SystemExit) as raised:
-        main(
-            [
-                "election",
-                "setup",
-                str(catalog_path),
-                "--round",
-                "2",
-                "--ballots",
-                str(runoff_path),
-            ]
-        )
+    second_round = ["--round", "2", "--ballots", str(runoff_path)]
 
-    assert str(raised.value) == "dema: run 'dema election setup' first"
+    with pytest.raises(SystemExit) as without_runs:
+        main(["election", "setup", str(catalog_path), *second_round])
+    main(["election", "setup", str(catalog_path)])
+    main(["election", "setup", str(catalog_path), *second_round])
+    with pytest.raises(SystemExit) as after_runoff:
+        main(["election", "setup", str(catalog_path), *second_round])
+
+    expected = "dema: the second round needs an active first-round run"
+    assert str(without_runs.value) == str(after_runoff.value) == expected
 
 
 def rename_candidate(source: Path, target: Path, old: int, new: int) -> Path:

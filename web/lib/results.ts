@@ -1,3 +1,4 @@
+import type { RunRef } from "@/lib/runs"
 export type Verdict = "undecided" | "elected" | "runoff"
 
 export type Progress = {
@@ -41,6 +42,7 @@ export type Results = {
   verdict: Verdict
   finalists: number[]
   margin: Margin
+  run: RunRef | null
 }
 
 export type BreakdownItem = {

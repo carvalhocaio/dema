@@ -1,14 +1,23 @@
 import argparse
 from collections.abc import Callable, Sequence
 
-from dema.cli import api, ballots, database, election, sections, tally, workers
+from dema.cli import (
+    api,
+    ballots,
+    database,
+    director,
+    election,
+    sections,
+    tally,
+    workers,
+)
 from dema.cli.election import SetupError
 from dema.domain.election import ElectionNotSetUpError
 from dema.simulation.runoff import NoRunoffError
 from dema.wiring import MissingSigningKeyError
 
 Handler = Callable[[argparse.Namespace], None]
-COMMANDS = (sections, ballots, database, election, workers, tally, api)
+COMMANDS = (sections, ballots, database, election, workers, tally, api, director)
 EXPECTED_ERRORS = (
     ElectionNotSetUpError,
     MissingSigningKeyError,

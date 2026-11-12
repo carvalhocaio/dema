@@ -177,3 +177,69 @@ describe("ResultsScreen during a replay", () => {
     expect(within(second).getByRole("status")).toHaveTextContent("Ao vivo")
   })
 })
+
+describe("ResultsScreen with on-demand runs", () => {
+  function serveRuns(rounds: () => object[]) {
+    return routeFetch({
+      "/rounds": () => respond(200, rounds()),
+      "/runs/current": () =>
+        respond(200, {
+          run: { id: 3, round: 1, seed: 40, status: "counting" },
+          runs_enabled: true,
+        }),
+      "/runs": () =>
+        respond(202, { id: 4, round: 1, seed: 7, status: "preparing" }),
+      "/rounds/1/results": () => respond(200, FIRST_ROUND),
+      "/rounds/2/results": () => respond(200, RUNOFF),
+    })
+  }
+
+  it("shows the run with its seed and offers a new count", async () => {
+    serveRuns(() => [{ round: 1, status: "live" }])
+
+    renderWithProviders(<ResultsScreen />)
+
+    expect(await screen.findByText(/Rodada #3/)).toHaveTextContent("seed 40")
+    expect(
+      screen.getByRole("button", { name: "Nova apuração" })
+    ).toBeInTheDocument()
+  })
+
+  it("follows the runoff as soon as the stream announces it", async () => {
+    let rounds: object[] = [{ round: 1, status: "live" }]
+    window.history.replaceState(null, "", "/?turno=1")
+    serveRuns(() => rounds)
+    renderWithProviders(<ResultsScreen />)
+    await screen.findByText(/Rodada #3/)
+    rounds = [
+      { round: 1, status: "final" },
+      { round: 2, status: "live" },
+    ]
+
+    act(() => FakeEventSource.latest().announce({ id: 5, round: 2, seed: 40 }))
+
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /2º turno/ })).toHaveAttribute(
+        "aria-selected",
+        "true"
+      )
+    )
+    expect(window.location.search).toBe("")
+  })
+
+  it("returns to the live round after starting a new count", async () => {
+    const fetchMock = serveRuns(() => [{ round: 1, status: "live" }])
+    renderWithProviders(<ResultsScreen />)
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Nova apuração" })
+    )
+    await userEvent.click(screen.getByRole("button", { name: "Iniciar" }))
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(([url]) => url.endsWith("/runs/current"))
+      ).toHaveLength(2)
+    )
+  })
+})

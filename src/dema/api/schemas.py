@@ -1,14 +1,17 @@
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from dema.domain.election import Election
+from dema.domain.run import Run, RunStatus
 from dema.domain.state import Region
 from dema.tallying.outcome import Margin, Outcome, Verdict, decide
 from dema.tallying.states import StateTally
 from dema.tallying.tally import Tally
 from dema.tallying.timeline import Timeline
+
+MAX_SEED = 2**62
 
 
 class View(BaseModel):
@@ -59,6 +62,37 @@ class MarginView(View):
         )
 
 
+class RunView(View):
+    id: int
+    round: int
+    seed: int
+    status: RunStatus
+
+    @classmethod
+    def of(cls, run: Run) -> "RunView":
+        return cls(id=run.id, round=run.round, seed=run.seed, status=run.status)
+
+
+class RunRefView(View):
+    id: int
+    round: int
+    seed: int
+
+    @classmethod
+    def of(cls, run: Run) -> "RunRefView":
+        return cls(id=run.id, round=run.round, seed=run.seed)
+
+
+class CurrentRunView(View):
+    run: RunView | None
+    runs_enabled: bool
+
+
+class RunRequest(BaseModel):
+    seed: int | None = Field(default=None, ge=0, le=MAX_SEED)
+    speed: float | None = Field(default=None, gt=0)
+
+
 class ResultsView(View):
     year: int
     round: int
@@ -68,10 +102,18 @@ class ResultsView(View):
     verdict: Verdict
     finalists: tuple[int, ...]
     margin: MarginView
+    run: RunRefView | None = None
 
     @classmethod
-    def build(cls, election: Election, tally: Tally, outcome: Outcome) -> "ResultsView":
+    def build(
+        cls,
+        election: Election,
+        tally: Tally,
+        outcome: Outcome,
+        run: Run | None = None,
+    ) -> "ResultsView":
         return cls(
+            run=None if run is None else RunRefView.of(run),
             year=election.year,
             round=election.round,
             progress=ProgressView(
