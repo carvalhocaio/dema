@@ -13,7 +13,6 @@ from redis.asyncio import Redis
 
 from dema.api.broadcaster import Broadcaster
 from dema.api.schemas import (
-    MAX_SEED,
     CurrentRunView,
     ReplayView,
     ResultsView,
@@ -37,6 +36,7 @@ NOT_FOUND = "round {round} is not set up"
 NOT_LIVE = "round {round} is not being counted"
 RUNS_DISABLED = "new counts are disabled; set DEMA_ALLOW_RUNS=true"
 GZIP_MINIMUM_SIZE = 1024
+DRAWN_SEEDS = 1_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,7 +153,7 @@ async def create_run(
     if not context.settings.allow_runs:
         raise HTTPException(status.HTTP_403_FORBIDDEN, RUNS_DISABLED)
     request = request or RunRequest()
-    seed = secrets.randbelow(MAX_SEED) if request.seed is None else request.seed
+    seed = secrets.randbelow(DRAWN_SEEDS) if request.seed is None else request.seed
     try:
         run = await context.archive.request_run(seed, request.speed)
     except ElectionNotSetUpError as error:

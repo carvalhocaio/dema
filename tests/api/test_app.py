@@ -278,7 +278,8 @@ def test_draws_a_seed_when_none_is_given() -> None:
         response = client.post("/runs")
 
     [(seed, speed)] = archive.requests
-    assert response.json()["seed"] == seed >= 0
+    assert response.json()["seed"] == seed
+    assert 0 <= seed < 1_000_000
     assert speed is None
 
 

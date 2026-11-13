@@ -1,4 +1,4 @@
-.PHONY: help sync install hooks hooks-run test lint lint-fix format format-check typecheck audit ci check clean up down migrate web-install web-dev web-check
+.PHONY: help sync install hooks hooks-run test lint lint-fix format format-check typecheck audit ci check clean up down migrate web-install web-dev web-check demo
 
 help: ## Lists all available Makefile commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -63,3 +63,9 @@ web-check: ## Runs web lint, typecheck, tests and production build
 	npm --prefix web run typecheck
 	npm --prefix web run test -- --coverage
 	npm --prefix web run build
+
+demo: up ## Runs the whole demo (API, workers, director and web) on http://localhost:3000
+	@echo "dema demo: http://localhost:3000 (Ctrl+C stops everything)"
+	@npm --prefix web run dev >/dev/null 2>&1 & web=$$!; \
+	trap 'kill $$web 2>/dev/null' EXIT; \
+	uv run dema demo

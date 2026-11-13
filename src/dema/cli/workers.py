@@ -19,11 +19,12 @@ def register(commands: Subparsers) -> None:
     actions = workers.add_subparsers(required=True)
     run = actions.add_parser("run", help="consume ballots until interrupted")
     run.add_argument("--processes", type=int, default=1)
+    run.add_argument("--name", default=socket.gethostname(), help="consumer prefix")
     run.set_defaults(handler=_run)
 
 
 def _run(args: argparse.Namespace) -> None:
-    names = [f"{socket.gethostname()}-{index}" for index in range(args.processes)]
+    names = [f"{args.name}-{index}" for index in range(args.processes)]
     if len(names) == 1:
         _work(names[0])
         return

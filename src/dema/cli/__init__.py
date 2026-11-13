@@ -5,6 +5,7 @@ from dema.cli import (
     api,
     ballots,
     database,
+    demo,
     director,
     election,
     sections,
@@ -12,17 +13,29 @@ from dema.cli import (
     workers,
 )
 from dema.cli.election import SetupError
+from dema.demo.readiness import DemoError
 from dema.domain.election import ElectionNotSetUpError
 from dema.simulation.runoff import NoRunoffError
 from dema.wiring import MissingSigningKeyError
 
 Handler = Callable[[argparse.Namespace], None]
-COMMANDS = (sections, ballots, database, election, workers, tally, api, director)
+COMMANDS = (
+    sections,
+    ballots,
+    database,
+    election,
+    workers,
+    tally,
+    api,
+    director,
+    demo,
+)
 EXPECTED_ERRORS = (
     ElectionNotSetUpError,
     MissingSigningKeyError,
     NoRunoffError,
     SetupError,
+    DemoError,
 )
 
 
