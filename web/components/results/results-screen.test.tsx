@@ -6,6 +6,7 @@ import { ResultsScreen } from "@/components/results/results-screen"
 import { FakeEventSource } from "@/test/event-source"
 import { respond, routeFetch } from "@/test/fetch"
 import { makeResults } from "@/test/fixtures"
+import { makePipeline } from "@/test/pipeline"
 import { renderWithProviders } from "@/test/render"
 import { makeReplay } from "@/test/replay"
 import { makeTimeline } from "@/test/timeline"
@@ -241,5 +242,26 @@ describe("ResultsScreen with on-demand runs", () => {
         fetchMock.mock.calls.filter(([url]) => url.endsWith("/runs/current"))
       ).toHaveLength(2)
     )
+  })
+})
+
+describe("ResultsScreen behind the scenes", () => {
+  it("shows the pipeline panel and updates it from the live stream", async () => {
+    routeFetch({
+      "/rounds": () => respond(200, [{ round: 1, status: "live" }]),
+      "/rounds/1/results": () => respond(200, FIRST_ROUND),
+      "/pipeline": () => respond(200, makePipeline({ rejected: 3 })),
+    })
+    renderWithProviders(<ResultsScreen />)
+
+    await screen.findByText("Bastidores")
+    const rejected = () =>
+      screen.getByText("Rejeitados", { selector: "dt" }).nextElementSibling
+    expect(rejected()).toHaveTextContent("3")
+    await waitFor(() => expect(FakeEventSource.instances).not.toHaveLength(0))
+
+    act(() => FakeEventSource.latest().publish(makePipeline({ rejected: 4 })))
+
+    expect(rejected()).toHaveTextContent("4")
   })
 })

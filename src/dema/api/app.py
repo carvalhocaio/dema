@@ -1,7 +1,7 @@
 import asyncio
 import secrets
-from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager, suppress
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from contextlib import AsyncExitStack, aclosing, asynccontextmanager, suppress
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -12,8 +12,10 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from redis.asyncio import Redis
 
 from dema.api.broadcaster import Broadcaster
+from dema.api.merge import merge
 from dema.api.schemas import (
     CurrentRunView,
+    PipelineView,
     ReplayView,
     ResultsView,
     RoundStatus,
@@ -23,9 +25,17 @@ from dema.api.schemas import (
     StatesView,
     TimelineView,
 )
-from dema.api.sources import ActiveRound, Archive, PostgresArchive, SnapshotFactory
+from dema.api.sources import (
+    ActiveRound,
+    Archive,
+    PipelineSource,
+    PostgresArchive,
+    SnapshotFactory,
+    active_record,
+)
 from dema.config import Settings, get_settings
 from dema.domain.election import ElectionNotSetUpError, ElectionRound
+from dema.monitoring.pipeline import PipelineCollector
 from dema.storage.elections import ElectionRecord
 from dema.tallying.outcome import decide
 from dema.tallying.redis_store import RedisTallyStore
@@ -44,6 +54,7 @@ class Context:
     settings: Settings
     archive: Archive
     broadcaster: Broadcaster[ResultsView]
+    pipeline: Broadcaster[PipelineView]
 
     async def family(self) -> tuple[ElectionRecord, ...]:
         try:
@@ -65,6 +76,7 @@ def create_app(
     settings: Settings | None = None,
     archive: Archive | None = None,
     snapshots: SnapshotFactory | None = None,
+    pipeline: PipelineSource | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
@@ -79,13 +91,26 @@ def create_app(
                 interval=settings.broadcast_interval,
                 ignored_errors=(ElectionNotSetUpError,),
             )
+            collector = pipeline or PipelineCollector(
+                redis, lambda: active_record(resolved)
+            )
+            metrics = Broadcaster(
+                _pipeline_view(collector),
+                interval=settings.pipeline_interval,
+                ignored_errors=(ElectionNotSetUpError,),
+                only_when_subscribed=True,
+            )
             await broadcaster.refresh()
-            task = asyncio.create_task(broadcaster.run())
-            app.state.context = Context(settings, resolved, broadcaster)
+            tasks = [
+                asyncio.create_task(broadcaster.run()),
+                asyncio.create_task(metrics.run()),
+            ]
+            app.state.context = Context(settings, resolved, broadcaster, metrics)
             yield
-            task.cancel()
+            for task in tasks:
+                task.cancel()
             with suppress(asyncio.CancelledError):
-                await task
+                await asyncio.gather(*tasks)
 
     app = FastAPI(title="dema", lifespan=lifespan)
     app.add_middleware(GZipMiddleware, minimum_size=GZIP_MINIMUM_SIZE)
@@ -97,6 +122,7 @@ def create_app(
     )
     app.add_api_route("/health", health, methods=["GET"])
     app.add_api_route("/runs/current", current_run, methods=["GET"])
+    app.add_api_route("/pipeline", pipeline_metrics, methods=["GET"])
     app.add_api_route(
         "/runs", create_run, methods=["POST"], status_code=status.HTTP_202_ACCEPTED
     )
@@ -119,6 +145,13 @@ async def _postgres_archive(
 ) -> Archive:
     connection = await stack.enter_async_context(open_database(settings))
     return PostgresArchive(connection, redis, settings.year)
+
+
+def _pipeline_view(source: PipelineSource) -> Callable[[], Awaitable[PipelineView]]:
+    async def load() -> PipelineView:
+        return PipelineView.of(await source.collect())
+
+    return load
 
 
 def _redis_snapshots(redis: Redis) -> SnapshotFactory:
@@ -161,6 +194,13 @@ async def create_run(
     return RunView.of(run)
 
 
+async def pipeline_metrics(context: ContextDependency) -> PipelineView:
+    await context.pipeline.refresh()
+    if context.pipeline.latest is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_READY)
+    return context.pipeline.latest
+
+
 async def rounds(context: ContextDependency) -> list[RoundView]:
     family = await context.family()
     return [
@@ -200,16 +240,23 @@ async def round_stream(
     context: Annotated[Context, Depends(live_context)],
 ) -> AsyncIterator[ServerSentEvent]:
     run_id: int | None = None
-    async for view in context.broadcaster.subscribe():
-        if view.run is not None and view.run.id != run_id:
-            if run_id is not None:
-                yield ServerSentEvent(data=view.run, event="run")
-            run_id = view.run.id
-        if view.round != round_:
-            return
-        yield ServerSentEvent(
-            data=view, event="results", id=str(view.progress.counted_sections)
-        )
+    events: AsyncGenerator[ResultsView | PipelineView] = merge(
+        context.broadcaster.subscribe(), context.pipeline.subscribe()
+    )
+    async with aclosing(events):
+        async for view in events:
+            if isinstance(view, PipelineView):
+                yield ServerSentEvent(data=view, event="pipeline")
+                continue
+            if view.run is not None and view.run.id != run_id:
+                if run_id is not None:
+                    yield ServerSentEvent(data=view.run, event="run")
+                run_id = view.run.id
+            if view.round != round_:
+                return
+            yield ServerSentEvent(
+                data=view, event="results", id=str(view.progress.counted_sections)
+            )
 
 
 async def round_timeline(

@@ -88,3 +88,23 @@ async def test_survives_ignored_and_unexpected_errors() -> None:
         await broadcaster.refresh()
 
     assert broadcaster.latest == 42
+
+
+async def test_can_load_only_while_someone_listens() -> None:
+    loads: list[int] = []
+
+    async def count() -> int:
+        loads.append(1)
+        return len(loads)
+
+    broadcaster = Broadcaster(count, interval=0.001, only_when_subscribed=True)
+    task = asyncio.create_task(broadcaster.run())
+    await asyncio.sleep(0.01)
+    idle_loads = len(loads)
+    subscription = broadcaster.subscribe()
+    first = await anext(subscription)
+    await subscription.aclose()
+    task.cancel()
+
+    assert idle_loads == 0
+    assert first >= 1

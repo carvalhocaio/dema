@@ -7,12 +7,14 @@ import { ResultsHeader } from "@/components/results/results-header"
 import { ResultsSkeleton } from "@/components/results/results-skeleton"
 import { RoundTabs } from "@/components/results/round-tabs"
 import { NewCountDialog } from "@/components/results/new-count-dialog"
+import { PipelinePanel } from "@/components/results/pipeline-panel"
 import { RoundView, type RoundReport } from "@/components/results/round-view"
 import { RunBadge } from "@/components/results/run-badge"
 import { SetupPendingCard } from "@/components/results/setup-pending-card"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { useCurrentRun } from "@/hooks/use-current-run"
+import { usePipeline } from "@/hooks/use-pipeline"
 import { useRounds } from "@/hooks/use-rounds"
 import { useSelectedRound } from "@/hooks/use-selected-round"
 import { LIVE_STATUS, sameReport } from "@/lib/connection"
@@ -27,6 +29,7 @@ export function ResultsScreen() {
   const { status, rounds, refresh: refreshRounds } = useRounds()
   const { selected, select, follow } = useSelectedRound(rounds)
   const { current, refresh: refreshRun } = useCurrentRun()
+  const { pipeline, receive: receivePipeline } = usePipeline()
   const [report, setReport] = useState(INITIAL_REPORT)
   const onReport = useCallback((next: RoundReport) => {
     setReport((previous) => (sameReport(previous, next) ? previous : next))
@@ -78,6 +81,7 @@ export function ResultsScreen() {
               hasFirstRound={findRound(rounds, 1) !== undefined}
               onReport={onReport}
               onRun={followActiveRun}
+              onPipeline={receivePipeline}
             />
           </TabsContent>
         ) : status === "ready" ? (
@@ -86,6 +90,11 @@ export function ResultsScreen() {
           <ResultsSkeleton />
         )}
       </Tabs>
+      {pipeline && (
+        <div className="mt-12">
+          <PipelinePanel pipeline={pipeline} />
+        </div>
+      )}
     </main>
   )
 }

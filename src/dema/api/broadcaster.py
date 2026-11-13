@@ -11,8 +11,10 @@ class Broadcaster[T]:
         load: Callable[[], Awaitable[T]],
         interval: float,
         ignored_errors: tuple[type[Exception], ...] = (),
+        only_when_subscribed: bool = False,
     ) -> None:
         self._load = load
+        self._only_when_subscribed = only_when_subscribed
         self._interval = interval
         self._ignored_errors = ignored_errors
         self._latest: T | None = None
@@ -28,7 +30,8 @@ class Broadcaster[T]:
 
     async def run(self) -> None:
         while True:
-            await self.refresh()
+            if self._subscribers or not self._only_when_subscribed:
+                await self.refresh()
             await asyncio.sleep(self._interval)
 
     async def refresh(self) -> None:

@@ -12,12 +12,18 @@ from tests.api.fakes import (
     SECOND_RECORD,
     SECOND_ROUND,
     FakeArchive,
+    FakePipeline,
     FakeSource,
     first_round_record,
+    make_pipeline,
     make_tally,
 )
 
-SETTINGS = Settings(broadcast_interval=0.01, cors_origins=["http://localhost:3000"])
+SETTINGS = Settings(
+    broadcast_interval=0.01,
+    pipeline_interval=3_600,
+    cors_origins=["http://localhost:3000"],
+)
 RUNS_SETTINGS = SETTINGS.model_copy(update={"allow_runs": True})
 
 
@@ -346,3 +352,54 @@ def test_stream_announces_the_runoff_and_closes() -> None:
 
     assert [event["event"] for event in events] == ["run"]
     assert events[0]["data"] == {"id": 2, "round": 2, "seed": 40}
+
+
+def pipeline_client(pipeline: FakePipeline, interval: float = 3_600) -> TestClient:
+    settings = SETTINGS.model_copy(update={"pipeline_interval": interval})
+    source = FakeSource(make_tally(counted_sections=4))
+    return TestClient(create_app(settings, FakeArchive(), lambda _: source, pipeline))
+
+
+def test_reports_the_pipeline_metrics() -> None:
+    with pipeline_client(FakePipeline(make_pipeline())) as client:
+        body = client.get("/pipeline").json()
+
+    assert body == {
+        "run": {"id": 1, "round": 1, "seed": 40},
+        "stream_length": 12,
+        "pending": 3,
+        "lag": 5,
+        "consumers": [
+            {"name": "demo-0-0", "pending": 3, "idle_ms": 120, "active": True},
+            {"name": "old", "pending": 0, "idle_ms": 9_000, "active": False},
+        ],
+        "rejected": 1,
+        "counted_sections": 4,
+        "rate": 12.3,
+        "peak_rate": 40.0,
+        "rates": [0.0, 12.3],
+    }
+
+
+def test_pipeline_is_unavailable_before_any_run() -> None:
+    with pipeline_client(FakePipeline()) as client:
+        response = client.get("/pipeline")
+
+    assert response.status_code == 503
+
+
+def test_streams_pipeline_metrics_alongside_the_results() -> None:
+    pipeline = FakePipeline(make_pipeline())
+    with (
+        pipeline_client(pipeline, interval=0.01) as client,
+        client.stream("GET", "/rounds/1/stream") as response,
+    ):
+        lines = response.iter_lines()
+        events = read_events(lines, count=2)
+        pipeline.snapshot = make_pipeline(counted=9)
+        while (event := read_events(lines, count=1)[0])["event"] != "pipeline" or (
+            event["data"]["counted_sections"] != 9
+        ):
+            continue
+
+    assert {event["event"] for event in events} == {"results", "pipeline"}

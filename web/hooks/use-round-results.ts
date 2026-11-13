@@ -3,6 +3,7 @@
 import { useEffect, useReducer, useRef } from "react"
 
 import { apiUrl } from "@/lib/api"
+import type { Pipeline } from "@/lib/pipeline"
 import type { Results } from "@/lib/results"
 import type { RunRef } from "@/lib/runs"
 
@@ -72,17 +73,22 @@ async function fetchSnapshot(
 
 const UNREACHABLE: Action = { type: "error", retrying: false }
 
+function ignorePipeline(): void {}
+
 export function useRoundResults(
   round: number,
   live: boolean,
-  onRun: (run: RunRef) => void
+  onRun: (run: RunRef) => void,
+  onPipeline: (pipeline: Pipeline) => void = ignorePipeline
 ): ResultsState {
   const [state, dispatch] = useReducer(reducer, initialState)
   const runListener = useRef(onRun)
+  const pipelineListener = useRef(onPipeline)
 
   useEffect(() => {
     runListener.current = onRun
-  }, [onRun])
+    pipelineListener.current = onPipeline
+  }, [onRun, onPipeline])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -118,6 +124,9 @@ export function useRoundResults(
     })
     source.addEventListener("run", (event: MessageEvent<string>) => {
       runListener.current(JSON.parse(event.data) as RunRef)
+    })
+    source.addEventListener("pipeline", (event: MessageEvent<string>) => {
+      pipelineListener.current(JSON.parse(event.data) as Pipeline)
     })
     loadSnapshot("live")
 

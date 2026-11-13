@@ -6,12 +6,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from dema.domain.election import Election
 from dema.domain.run import Run, RunStatus
 from dema.domain.state import Region
+from dema.monitoring.pipeline import PipelineSnapshot
 from dema.tallying.outcome import Margin, Outcome, Verdict, decide
 from dema.tallying.states import StateTally
 from dema.tallying.tally import Tally
 from dema.tallying.timeline import Timeline
 
 MAX_SEED = 2**62
+RATE_DIGITS = 1
 
 
 class View(BaseModel):
@@ -263,4 +265,48 @@ class StatesView(View):
                 )
                 for item in states
             ),
+        )
+
+
+class ConsumerView(View):
+    name: str
+    pending: int
+    idle_ms: int
+    active: bool
+
+
+class PipelineView(View):
+    run: RunRefView
+    stream_length: int
+    pending: int
+    lag: int | None
+    consumers: tuple[ConsumerView, ...]
+    rejected: int
+    counted_sections: int
+    rate: float
+    peak_rate: float
+    rates: tuple[float, ...]
+
+    @classmethod
+    def of(cls, snapshot: PipelineSnapshot) -> "PipelineView":
+        stats = snapshot.stats
+        return cls(
+            run=RunRefView.of(snapshot.run),
+            stream_length=stats.length,
+            pending=stats.pending,
+            lag=stats.lag,
+            consumers=tuple(
+                ConsumerView(
+                    name=consumer.name,
+                    pending=consumer.pending,
+                    idle_ms=consumer.idle_ms,
+                    active=consumer.active,
+                )
+                for consumer in stats.consumers
+            ),
+            rejected=stats.rejected,
+            counted_sections=stats.counted,
+            rate=round(snapshot.rate, RATE_DIGITS),
+            peak_rate=round(snapshot.peak_rate, RATE_DIGITS),
+            rates=tuple(round(rate, RATE_DIGITS) for rate in snapshot.rates),
         )

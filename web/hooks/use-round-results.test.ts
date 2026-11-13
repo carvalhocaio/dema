@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { useRoundResults } from "@/hooks/use-round-results"
 import { FakeEventSource } from "@/test/event-source"
 import { makeResults } from "@/test/fixtures"
+import { makePipeline } from "@/test/pipeline"
 import { respond, stubFetch, type FetchResponse } from "@/test/fetch"
 
 beforeEach(() => {
@@ -148,5 +149,24 @@ describe("useRoundResults run events", () => {
     act(() => FakeEventSource.latest().announce({ id: 5, round: 1, seed: 9 }))
 
     expect(onRun).toHaveBeenCalledWith({ id: 5, round: 1, seed: 9 })
+  })
+
+  it("forwards pipeline metrics from the live stream", async () => {
+    stubFetch(respond(200, makeResults()))
+    const onPipeline = vi.fn()
+    renderHook(() => useRoundResults(1, true, vi.fn(), onPipeline))
+
+    act(() => FakeEventSource.latest().publish(makePipeline()))
+
+    expect(onPipeline).toHaveBeenCalledWith(makePipeline())
+  })
+
+  it("ignores pipeline metrics when nobody listens", async () => {
+    stubFetch(respond(200, makeResults()))
+    const { result } = renderHook(() => useRoundResults(1, true, vi.fn()))
+
+    act(() => FakeEventSource.latest().publish(makePipeline()))
+
+    expect(result.current.connection).toBe("connecting")
   })
 })

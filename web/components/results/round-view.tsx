@@ -14,6 +14,7 @@ import { useStates } from "@/hooks/use-states"
 import { useTimeline } from "@/hooks/use-timeline"
 import { connectionStatus, type StatusReport } from "@/lib/connection"
 import { indexAt, REPLAY_STATUS, timelineUpTo } from "@/lib/replay"
+import type { Pipeline } from "@/lib/pipeline"
 import type { Round } from "@/lib/rounds"
 import type { RunRef } from "@/lib/runs"
 
@@ -24,15 +25,22 @@ export function RoundView({
   hasFirstRound,
   onReport,
   onRun,
+  onPipeline,
   replayClock,
 }: {
   round: Round
   hasFirstRound: boolean
   onReport: (report: RoundReport) => void
   onRun: (run: RunRef) => void
+  onPipeline?: (pipeline: Pipeline) => void
   replayClock?: ReplayClock
 }) {
-  const live = useRoundResults(round.round, round.status === "live", onRun)
+  const live = useRoundResults(
+    round.round,
+    round.status === "live",
+    onRun,
+    onPipeline
+  )
   const timeline = useTimeline(
     round.round,
     live.results?.progress.counted_sections ?? null

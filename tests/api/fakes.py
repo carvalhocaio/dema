@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from dema.domain.election import Election, ElectionNotSetUpError, ElectionRound
 from dema.domain.run import Run, RunStatus
 from dema.domain.state import State
+from dema.monitoring.pipeline import ConsumerState, PipelineSnapshot, StreamStats
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND, KEONS, NICO
 from dema.simulation.runoff import SECOND_ROUND_POLLS_CLOSE
 from dema.storage.elections import ElectionRecord
@@ -118,3 +119,27 @@ class FakeArchive:
 
     async def timeline(self, record: ElectionRecord) -> Timeline:
         return make_timeline(record.election)
+
+
+def make_pipeline(counted: int = 4) -> PipelineSnapshot:
+    stats = StreamStats(
+        length=12,
+        pending=3,
+        lag=5,
+        consumers=(ConsumerState("demo-0-0", 3, 120), ConsumerState("old", 0, 9_000)),
+        rejected=1,
+        counted=counted,
+    )
+    return PipelineSnapshot(
+        run=FIRST_RUN, stats=stats, rate=12.345, peak_rate=40.0, rates=(0.0, 12.345)
+    )
+
+
+class FakePipeline:
+    def __init__(self, snapshot: PipelineSnapshot | None = None) -> None:
+        self.snapshot = snapshot
+
+    async def collect(self) -> PipelineSnapshot:
+        if self.snapshot is None:
+            raise ElectionNotSetUpError
+        return self.snapshot

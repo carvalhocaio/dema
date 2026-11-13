@@ -7,6 +7,7 @@ from redis.asyncio import Redis
 from dema.api.schemas import ResultsView
 from dema.director.control import ControlStream, CountRequest
 from dema.domain.run import Run
+from dema.monitoring.pipeline import PipelineSnapshot
 from dema.runtime.active import ActiveRuns
 from dema.storage.ballots import PostgresBallotRepository
 from dema.storage.elections import ElectionRecord
@@ -21,6 +22,10 @@ class SnapshotSource(Protocol):
 
 
 SnapshotFactory = Callable[[ElectionRecord], SnapshotSource]
+
+
+class PipelineSource(Protocol):
+    async def collect(self) -> PipelineSnapshot: ...
 
 
 class Archive(Protocol):
@@ -77,10 +82,14 @@ class ActiveRound:
         self._sources: dict[int, SnapshotSource] = {}
 
     async def results(self) -> ResultsView:
-        record = (await self._archive.family())[-1]
+        record = await active_record(self._archive)
         source = self._sources.get(record.run.id)
         if source is None:
             source = self._sources[record.run.id] = self._snapshots(record)
         tally = await source.snapshot()
         election = record.election
         return ResultsView.build(election, tally, decide(election, tally), record.run)
+
+
+async def active_record(archive: Archive) -> ElectionRecord:
+    return (await archive.family())[-1]

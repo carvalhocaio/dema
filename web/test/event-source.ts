@@ -1,3 +1,4 @@
+import type { Pipeline } from "@/lib/pipeline"
 import type { Results } from "@/lib/results"
 import type { RunRef } from "@/lib/runs"
 
@@ -47,6 +48,13 @@ export class FakeEventSource {
   announce(run: RunRef): void {
     const event = new MessageEvent("run", { data: JSON.stringify(run) })
     this.listeners.get("run")?.(event)
+  }
+
+  publish(pipeline: Pipeline): void {
+    const event = new MessageEvent("pipeline", {
+      data: JSON.stringify(pipeline),
+    })
+    this.listeners.get("pipeline")?.(event)
   }
 
   fail(readyState: number): void {
