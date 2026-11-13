@@ -6,7 +6,7 @@ from dema.domain.run import Run
 from dema.integrity.signer import BallotSigner, VerifiedBallot
 from dema.sections.catalog import SectionCatalog
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND
-from dema.storage.ballots import PostgresBallotRepository
+from dema.storage.ballots import PostgresBallotRepository, batch_filter
 from dema.storage.runs import RunRepository
 from tests.helpers import SIGNING_KEY, expected_tally
 
@@ -93,3 +93,10 @@ async def test_only_the_active_run_accepts_ballots(
     assert await repository.save_many(verify_all(small_ballots[:5])) == 0
     cursor = await async_connection.execute("SELECT count(*) FROM ballots")
     assert await cursor.fetchone() == (0,)
+
+
+def test_a_batch_rollup_bounds_every_table_it_reads() -> None:
+    bounds = batch_filter("vbs")
+
+    assert bounds.count("= ANY(%(sections)s::text[])") == 3
+    assert all(column in bounds for column in ("v.section", "b.section", "s.key"))

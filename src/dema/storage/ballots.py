@@ -91,7 +91,11 @@ ON CONFLICT (run_id, minute, candidate) DO UPDATE SET
     votes = minute_votes.votes + EXCLUDED.votes
 """
 
-ONLY_SECTIONS = "AND b.section = ANY(%(sections)s::text[])"
+# A batch rollup bounds every table it reads to the batch's sections. The
+# planner does not carry `= ANY(...)` across join equalities, and a run that
+# started after the last ANALYZE looks empty to it; with a single bound it
+# picked plans that scanned the whole run on every batch.
+BATCH_COLUMNS = {"b": "b.section", "v": "v.section", "s": "s.key"}
 
 ROLLUP_STATE_TOTALS = """
 INSERT INTO state_totals
@@ -140,7 +144,12 @@ FROM state_votes
 WHERE run_id = %(run_id)s
 """
 
-ROLLUPS = (ROLLUP_TOTALS, ROLLUP_VOTES, ROLLUP_STATE_TOTALS, ROLLUP_STATE_VOTES)
+ROLLUPS = (
+    (ROLLUP_TOTALS, "bs"),
+    (ROLLUP_VOTES, "vb"),
+    (ROLLUP_STATE_TOTALS, "bs"),
+    (ROLLUP_STATE_VOTES, "vbs"),
+)
 
 CLEAR_ROLLUP = (
     "DELETE FROM state_votes WHERE run_id = %(run_id)s",
@@ -186,14 +195,14 @@ class PostgresBallotRepository:
                 await self._connection.execute(
                     INSERT_VOTES, self._scope() | _vote_columns(fresh)
                 )
-                await self._roll_up(ONLY_SECTIONS, {"sections": inserted})
+                await self._roll_up(inserted)
         return len(inserted)
 
     async def rebuild_rollup(self) -> None:
         async with self._connection.transaction():
             for statement in CLEAR_ROLLUP:
                 await self._connection.execute(statement, self._scope())
-            await self._roll_up("", {})
+            await self._roll_up(None)
 
     async def timeline(self) -> Timeline:
         cursor = await self._connection.execute(TOTALS_ONLY)
@@ -242,10 +251,12 @@ class PostgresBallotRepository:
         ]
         return build_state_tallies(self._election, totals, counts)
 
-    async def _roll_up(self, sections: str, params: dict[str, list[str]]) -> None:
-        for template in ROLLUPS:
+    async def _roll_up(self, sections: list[str] | None) -> None:
+        params = {} if sections is None else {"sections": sections}
+        for template, aliases in ROLLUPS:
+            bound = "" if sections is None else batch_filter(aliases)
             await self._connection.execute(
-                template.format(sections=sections).encode(), self._scope() | params
+                template.format(sections=bound).encode(), self._scope() | params
             )
 
     async def tally(self) -> Tally:
@@ -304,3 +315,9 @@ def _vote_columns(verified: Sequence[VerifiedBallot]) -> dict[str, list]:
     ]
     sections, candidates, votes = (list(column) for column in zip(*rows, strict=True))
     return {"sections": sections, "candidates": candidates, "votes": votes}
+
+
+def batch_filter(aliases: str) -> str:
+    return "".join(
+        f" AND {BATCH_COLUMNS[alias]} = ANY(%(sections)s::text[])" for alias in aliases
+    )
