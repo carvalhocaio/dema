@@ -5,8 +5,10 @@ from psycopg import AsyncConnection
 from redis.asyncio import Redis
 
 from dema.api.schemas import ResultsView
+from dema.audit.ballots import AuditedBallot, Rejection, TamperedBallot
 from dema.director.control import ControlStream, CountRequest
 from dema.domain.run import Run
+from dema.domain.section import SectionKey
 from dema.monitoring.pipeline import PipelineSnapshot
 from dema.runtime.active import ActiveRuns
 from dema.storage.ballots import PostgresBallotRepository
@@ -22,6 +24,18 @@ class SnapshotSource(Protocol):
 
 
 SnapshotFactory = Callable[[ElectionRecord], SnapshotSource]
+
+
+class AuditSource(Protocol):
+    async def section(
+        self, record: ElectionRecord, key: SectionKey
+    ) -> AuditedBallot | None: ...
+
+    async def random_section(self, record: ElectionRecord) -> AuditedBallot | None: ...
+
+    async def rejected(self, record: ElectionRecord) -> tuple[Rejection, ...]: ...
+
+    async def tamper(self, record: ElectionRecord) -> TamperedBallot: ...
 
 
 class PipelineSource(Protocol):

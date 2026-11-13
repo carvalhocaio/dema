@@ -3,6 +3,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from dema.audit.ballots import AuditedBallot, Rejection
 from dema.domain.election import Election
 from dema.domain.run import Run, RunStatus
 from dema.domain.state import Region
@@ -310,3 +311,65 @@ class PipelineView(View):
             peak_rate=round(snapshot.peak_rate, RATE_DIGITS),
             rates=tuple(round(rate, RATE_DIGITS) for rate in snapshot.rates),
         )
+
+
+class BallotVoteView(View):
+    number: int
+    name: str
+    votes: int
+
+
+class BallotAuditView(View):
+    section: str
+    state: str
+    issued_at: datetime
+    received_at: datetime
+    eligible_voters: int
+    candidates: tuple[BallotVoteView, ...]
+    blank: int
+    null: int
+    signature: str
+    verified: bool | None
+
+    @classmethod
+    def of(cls, election: Election, audited: AuditedBallot) -> "BallotAuditView":
+        ballot = audited.ballot
+        names = {candidate.number: candidate.name for candidate in election.candidates}
+        return cls(
+            section=str(ballot.section),
+            state=ballot.section.state.value,
+            issued_at=ballot.issued_at,
+            received_at=audited.received_at,
+            eligible_voters=ballot.eligible_voters,
+            candidates=tuple(
+                BallotVoteView(number=number, name=names[number], votes=votes)
+                for number, votes in sorted(
+                    ballot.nominal_votes.items(), key=lambda item: -item[1]
+                )
+            ),
+            blank=ballot.blank_votes,
+            null=ballot.null_votes,
+            signature=audited.signature,
+            verified=audited.verified,
+        )
+
+
+class RejectionView(View):
+    entry: str
+    at: datetime
+    reason: str
+    section: str | None
+
+    @classmethod
+    def of(cls, rejection: Rejection) -> "RejectionView":
+        return cls(
+            entry=rejection.entry,
+            at=rejection.at,
+            reason=rejection.reason,
+            section=rejection.section,
+        )
+
+
+class TamperView(View):
+    section: str
+    source: str

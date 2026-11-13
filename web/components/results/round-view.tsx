@@ -2,6 +2,7 @@
 
 import { useEffect } from "react"
 
+import { AuditSection } from "@/components/results/audit-section"
 import { ReplayControls } from "@/components/results/replay-controls"
 import { ResultsBoard } from "@/components/results/results-board"
 import { ResultsSkeleton } from "@/components/results/results-skeleton"
@@ -26,6 +27,8 @@ export function RoundView({
   onReport,
   onRun,
   onPipeline,
+  runsEnabled = false,
+  rejected = null,
   replayClock,
 }: {
   round: Round
@@ -33,6 +36,8 @@ export function RoundView({
   onReport: (report: RoundReport) => void
   onRun: (run: RunRef) => void
   onPipeline?: (pipeline: Pipeline) => void
+  runsEnabled?: boolean
+  rejected?: number | null
   replayClock?: ReplayClock
 }) {
   const live = useRoundResults(
@@ -91,6 +96,15 @@ export function RoundView({
         states={replaying ? null : states}
         palette={palette}
       />
+      {!replaying && (
+        <div className="pt-4">
+          <AuditSection
+            round={round.round}
+            canTamper={runsEnabled && round.status === "live"}
+            revision={rejected}
+          />
+        </div>
+      )}
     </div>
   )
 }

@@ -2,8 +2,16 @@ from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
+from dema.audit.ballots import (
+    AuditedBallot,
+    NothingToTamperError,
+    Rejection,
+    TamperedBallot,
+)
+from dema.domain.ballot import Ballot
 from dema.domain.election import Election, ElectionNotSetUpError, ElectionRound
 from dema.domain.run import Run, RunStatus
+from dema.domain.section import SectionKey
 from dema.domain.state import State
 from dema.monitoring.pipeline import ConsumerState, PipelineSnapshot, StreamStats
 from dema.simulation.presets import DEMA_2026_FIRST_ROUND, KEONS, NICO
@@ -143,3 +151,49 @@ class FakePipeline:
         if self.snapshot is None:
             raise ElectionNotSetUpError
         return self.snapshot
+
+
+AUDITED_SECTION = SectionKey.parse("SP-71072-0001-0042")
+AUDITED = AuditedBallot(
+    ballot=Ballot(
+        section=AUDITED_SECTION,
+        eligible_voters=300,
+        nominal_votes={KEONS.number: 120, NICO.number: 150},
+        blank_votes=4,
+        null_votes=6,
+        issued_at=datetime(2026, 10, 4, 20, 3, tzinfo=UTC),
+    ),
+    signature="ab" * 32,
+    received_at=datetime(2026, 10, 4, 20, 3, 2, tzinfo=UTC),
+    verified=True,
+)
+REJECTION = Rejection(
+    entry="1791230580000-0",
+    at=datetime(2026, 10, 4, 20, 3, tzinfo=UTC),
+    reason="invalid signature",
+    section="AC-10025-0001-0002",
+)
+
+
+class FakeAudit:
+    def __init__(self, counted: bool = True, can_tamper: bool = True) -> None:
+        self.counted = counted
+        self.can_tamper = can_tamper
+        self.tampered: list[int] = []
+
+    async def section(
+        self, record: ElectionRecord, key: SectionKey
+    ) -> AuditedBallot | None:
+        return AUDITED if self.counted and key == AUDITED_SECTION else None
+
+    async def random_section(self, record: ElectionRecord) -> AuditedBallot | None:
+        return AUDITED if self.counted else None
+
+    async def rejected(self, record: ElectionRecord) -> tuple[Rejection, ...]:
+        return (REJECTION,)
+
+    async def tamper(self, record: ElectionRecord) -> TamperedBallot:
+        if not self.can_tamper:
+            raise NothingToTamperError
+        self.tampered.append(record.run.id)
+        return TamperedBallot(section="AC-10025-0001-0002", source=str(AUDITED_SECTION))

@@ -14,8 +14,10 @@ from redis.asyncio import Redis
 from dema.api.broadcaster import Broadcaster
 from dema.api.merge import merge
 from dema.api.schemas import (
+    BallotAuditView,
     CurrentRunView,
     PipelineView,
+    RejectionView,
     ReplayView,
     ResultsView,
     RoundStatus,
@@ -23,28 +25,39 @@ from dema.api.schemas import (
     RunRequest,
     RunView,
     StatesView,
+    TamperView,
     TimelineView,
 )
 from dema.api.sources import (
     ActiveRound,
     Archive,
+    AuditSource,
     PipelineSource,
     PostgresArchive,
     SnapshotFactory,
     active_record,
 )
+from dema.audit.ballots import BallotAudit, NothingToTamperError
 from dema.config import Settings, get_settings
 from dema.domain.election import ElectionNotSetUpError, ElectionRound
+from dema.domain.section import SectionKey
+from dema.integrity.signer import BallotSigner
 from dema.monitoring.pipeline import PipelineCollector
 from dema.storage.elections import ElectionRecord
 from dema.tallying.outcome import decide
 from dema.tallying.redis_store import RedisTallyStore
-from dema.wiring import open_database, open_redis
+from dema.wiring import build_signer, open_database, open_redis
 
 NOT_READY = "election is not set up yet"
 NOT_FOUND = "round {round} is not set up"
 NOT_LIVE = "round {round} is not being counted"
 RUNS_DISABLED = "new counts are disabled; set DEMA_ALLOW_RUNS=true"
+TAMPER_DISABLED = "tampering is disabled; set DEMA_ALLOW_RUNS=true"
+INVALID_SECTION = "section keys look like UF-municipality-zone-section"
+NOT_COUNTED = "section {key} has not been counted in round {round}"
+NONE_COUNTED = "no section has been counted in round {round} yet"
+NOTHING_TO_TAMPER = "tampering needs a counted section and one still to count"
+NO_AUDIT = "ballot audit needs the database"
 GZIP_MINIMUM_SIZE = 1024
 DRAWN_SEEDS = 1_000_000
 
@@ -55,6 +68,12 @@ class Context:
     archive: Archive
     broadcaster: Broadcaster[ResultsView]
     pipeline: Broadcaster[PipelineView]
+    audit: AuditSource | None
+
+    def auditor(self) -> AuditSource:
+        if self.audit is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_AUDIT)
+        return self.audit
 
     async def family(self) -> tuple[ElectionRecord, ...]:
         try:
@@ -77,6 +96,7 @@ def create_app(
     archive: Archive | None = None,
     snapshots: SnapshotFactory | None = None,
     pipeline: PipelineSource | None = None,
+    audit: AuditSource | None = None,
 ) -> FastAPI:
     settings = settings or get_settings()
 
@@ -84,7 +104,14 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as stack:
             redis = await stack.enter_async_context(open_redis(settings))
-            resolved = archive or await _postgres_archive(stack, settings, redis)
+            if archive is None:
+                connection = await stack.enter_async_context(open_database(settings))
+                resolved: Archive = PostgresArchive(connection, redis, settings.year)
+                audit_source = audit or BallotAudit(
+                    connection, redis, _optional_signer(settings)
+                )
+            else:
+                resolved, audit_source = archive, audit
             active = ActiveRound(resolved, snapshots or _redis_snapshots(redis))
             broadcaster = Broadcaster(
                 active.results,
@@ -105,7 +132,9 @@ def create_app(
                 asyncio.create_task(broadcaster.run()),
                 asyncio.create_task(metrics.run()),
             ]
-            app.state.context = Context(settings, resolved, broadcaster, metrics)
+            app.state.context = Context(
+                settings, resolved, broadcaster, metrics, audit_source
+            )
             yield
             for task in tasks:
                 task.cancel()
@@ -137,14 +166,22 @@ def create_app(
     app.add_api_route("/rounds/{round_}/timeline", round_timeline, methods=["GET"])
     app.add_api_route("/rounds/{round_}/replay", round_replay, methods=["GET"])
     app.add_api_route("/rounds/{round_}/states", round_states, methods=["GET"])
+    app.add_api_route(
+        "/rounds/{round_}/sections/random", random_section, methods=["GET"]
+    )
+    app.add_api_route("/rounds/{round_}/sections/{key}", section, methods=["GET"])
+    app.add_api_route("/rounds/{round_}/rejected", rejected, methods=["GET"])
+    app.add_api_route(
+        "/rounds/{round_}/tamper",
+        tamper,
+        methods=["POST"],
+        status_code=status.HTTP_202_ACCEPTED,
+    )
     return app
 
 
-async def _postgres_archive(
-    stack: AsyncExitStack, settings: Settings, redis: Redis
-) -> Archive:
-    connection = await stack.enter_async_context(open_database(settings))
-    return PostgresArchive(connection, redis, settings.year)
+def _optional_signer(settings: Settings) -> BallotSigner | None:
+    return None if settings.signing_key is None else build_signer(settings)
 
 
 def _pipeline_view(source: PipelineSource) -> Callable[[], Awaitable[PipelineView]]:
@@ -274,3 +311,56 @@ async def round_replay(round_: ElectionRound, context: ContextDependency) -> Rep
 async def round_states(round_: ElectionRound, context: ContextDependency) -> StatesView:
     record, _ = await context.round(round_)
     return StatesView.build(record.election, await context.archive.states(record))
+
+
+async def section(
+    round_: ElectionRound, key: str, context: ContextDependency
+) -> BallotAuditView:
+    record, _ = await context.round(round_)
+    try:
+        parsed = SectionKey.parse(key)
+    except ValueError as error:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, INVALID_SECTION
+        ) from error
+    audited = await context.auditor().section(record, parsed)
+    if audited is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            NOT_COUNTED.format(key=parsed, round=int(round_)),
+        )
+    return BallotAuditView.of(record.election, audited)
+
+
+async def random_section(
+    round_: ElectionRound, context: ContextDependency
+) -> BallotAuditView:
+    record, _ = await context.round(round_)
+    audited = await context.auditor().random_section(record)
+    if audited is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, NONE_COUNTED.format(round=int(round_))
+        )
+    return BallotAuditView.of(record.election, audited)
+
+
+async def rejected(
+    round_: ElectionRound, context: ContextDependency
+) -> list[RejectionView]:
+    record, _ = await context.round(round_)
+    return [RejectionView.of(item) for item in await context.auditor().rejected(record)]
+
+
+async def tamper(round_: ElectionRound, context: ContextDependency) -> TamperView:
+    if not context.settings.allow_runs:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, TAMPER_DISABLED)
+    record, live = await context.round(round_)
+    if not live:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, NOT_LIVE.format(round=int(round_))
+        )
+    try:
+        tampered = await context.auditor().tamper(record)
+    except NothingToTamperError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, NOTHING_TO_TAMPER) from error
+    return TamperView(section=tampered.section, source=tampered.source)

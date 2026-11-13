@@ -12,6 +12,7 @@ from tests.api.fakes import (
     SECOND_RECORD,
     SECOND_ROUND,
     FakeArchive,
+    FakeAudit,
     FakePipeline,
     FakeSource,
     first_round_record,
@@ -403,3 +404,110 @@ def test_streams_pipeline_metrics_alongside_the_results() -> None:
             continue
 
     assert {event["event"] for event in events} == {"results", "pipeline"}
+
+
+def audit_client(
+    audit: FakeAudit | None = None,
+    settings: Settings = RUNS_SETTINGS,
+    archive: FakeArchive | None = None,
+) -> TestClient:
+    source = FakeSource(make_tally(counted_sections=4))
+    return TestClient(
+        create_app(settings, archive or FakeArchive(), lambda _: source, None, audit)
+    )
+
+
+def test_audits_a_counted_section() -> None:
+    with audit_client(FakeAudit()) as client:
+        body = client.get("/rounds/1/sections/SP-71072-0001-0042").json()
+
+    assert body == {
+        "section": "SP-71072-0001-0042",
+        "state": "SP",
+        "issued_at": "2026-10-04T20:03:00Z",
+        "received_at": "2026-10-04T20:03:02Z",
+        "eligible_voters": 300,
+        "candidates": [
+            {"number": 99, "name": "Nico", "votes": 150},
+            {"number": 27, "name": "Keons", "votes": 120},
+        ],
+        "blank": 4,
+        "null": 6,
+        "signature": "ab" * 32,
+        "verified": True,
+    }
+
+
+def test_audit_explains_missing_and_malformed_sections() -> None:
+    with audit_client(FakeAudit(counted=False)) as client:
+        missing = client.get("/rounds/1/sections/SP-71072-0001-0042")
+        malformed = client.get("/rounds/1/sections/SP-banana")
+        none = client.get("/rounds/1/sections/random")
+        other_round = client.get("/rounds/2/sections/random")
+
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == (
+        "section SP-71072-0001-0042 has not been counted in round 1"
+    )
+    assert malformed.status_code == 422
+    assert none.status_code == 404
+    assert other_round.status_code == 404
+
+
+def test_draws_a_random_counted_section() -> None:
+    with audit_client(FakeAudit()) as client:
+        body = client.get("/rounds/1/sections/random").json()
+
+    assert body["section"] == "SP-71072-0001-0042"
+
+
+def test_lists_the_latest_rejections() -> None:
+    with audit_client(FakeAudit()) as client:
+        body = client.get("/rounds/1/rejected").json()
+
+    assert body == [
+        {
+            "entry": "1791230580000-0",
+            "at": "2026-10-04T20:03:00Z",
+            "reason": "invalid signature",
+            "section": "AC-10025-0001-0002",
+        }
+    ]
+
+
+def test_injects_a_tampered_ballot_into_the_live_round() -> None:
+    audit = FakeAudit()
+    with audit_client(audit) as client:
+        response = client.post("/rounds/1/tamper")
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "section": "AC-10025-0001-0002",
+        "source": "SP-71072-0001-0042",
+    }
+    assert audit.tampered == [1]
+
+
+def test_refuses_to_tamper_unless_allowed_live_and_possible() -> None:
+    first_round = make_tally(counted_sections=10, keons=480, nico=420)
+    runoff = FakeArchive(
+        (FIRST_RECORD, SECOND_RECORD), {ElectionRound.FIRST: first_round}
+    )
+    with audit_client(FakeAudit(), settings=SETTINGS) as client:
+        disabled = client.post("/rounds/1/tamper")
+    with audit_client(FakeAudit(), archive=runoff) as client:
+        finished = client.post("/rounds/1/tamper")
+    with audit_client(FakeAudit(can_tamper=False)) as client:
+        exhausted = client.post("/rounds/1/tamper")
+
+    assert disabled.status_code == 403
+    assert finished.status_code == 404
+    assert exhausted.status_code == 409
+
+
+def test_audit_needs_the_database() -> None:
+    with audit_client(None) as client:
+        response = client.get("/rounds/1/rejected")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "ballot audit needs the database"}

@@ -82,6 +82,8 @@ export function ResultsScreen() {
               onReport={onReport}
               onRun={followActiveRun}
               onPipeline={receivePipeline}
+              runsEnabled={current?.runs_enabled ?? false}
+              rejected={pipeline?.rejected ?? null}
             />
           </TabsContent>
         ) : status === "ready" ? (
