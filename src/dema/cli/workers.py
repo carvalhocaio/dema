@@ -7,7 +7,6 @@ import socket
 
 from dema.cli.common import Subparsers
 from dema.config import get_settings
-from dema.domain.election import ElectionNotSetUpError
 from dema.runtime.active import ActiveRuns
 from dema.wiring import build_signer, open_database, open_redis
 from dema.workers.lanes import ActiveLanes
@@ -44,10 +43,7 @@ def _work(consumer: str) -> None:
     logging.basicConfig(
         level=logging.INFO, format=f"%(asctime)s {consumer} %(levelname)s %(message)s"
     )
-    try:
-        asyncio.run(_work_async(consumer))
-    except ElectionNotSetUpError as error:
-        raise SystemExit(f"dema: {error}") from error
+    asyncio.run(_work_async(consumer))
 
 
 async def _work_async(consumer: str) -> None:
@@ -58,7 +54,6 @@ async def _work_async(consumer: str) -> None:
         loop.add_signal_handler(signum, stop.set)
     async with open_redis(settings) as redis, open_database(settings) as connection:
         active = ActiveRuns(redis, connection)
-        await active.current()
         worker = TallyWorker(
             lanes=ActiveLanes(active, redis, connection),
             signer=build_signer(settings),

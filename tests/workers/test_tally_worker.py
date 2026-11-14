@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import hmac
+import logging
 from collections.abc import Sequence
 
 import pytest
@@ -8,6 +9,7 @@ from psycopg import AsyncConnection
 from redis.asyncio import Redis
 
 from dema.domain.ballot import Ballot
+from dema.domain.election import ElectionNotSetUpError
 from dema.domain.run import Run
 from dema.integrity.signer import BallotSigner, SignedBallot, VerifiedBallot
 from dema.sections.catalog import SectionCatalog
@@ -214,6 +216,39 @@ async def test_run_retries_failed_batches_until_stopped(
 
     assert attempts == [0, 1]
     assert "batch failed" in caplog.text
+
+
+async def test_waits_for_a_run_instead_of_giving_up(
+    stream: BallotStream,
+    repository: PostgresBallotRepository,
+    store: RedisTallyStore,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    worker = make_worker(stream, repository, store)
+    stop = asyncio.Event()
+    attempts: list[int] = []
+
+    async def no_run_twice_then_count() -> int:
+        attempts.append(len(attempts))
+        if len(attempts) <= 2:
+            raise ElectionNotSetUpError
+        if len(attempts) == 3:
+            return 1
+        raise ElectionNotSetUpError
+
+    async def stop_after_waiting(seconds: float) -> None:
+        if len(attempts) == 4:
+            stop.set()
+
+    monkeypatch.setattr(tally_worker.asyncio, "sleep", stop_after_waiting)
+    monkeypatch.setattr(worker, "run_once", no_run_twice_then_count)
+
+    with caplog.at_level(logging.INFO):
+        await worker.run(stop)
+
+    assert attempts == [0, 1, 2, 3]
+    assert caplog.text.count("waiting for a run to count") == 2
 
 
 class SwitchingRepository:

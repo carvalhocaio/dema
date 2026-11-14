@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+from dema.domain.election import ElectionNotSetUpError
 from dema.integrity.signer import BallotSigner, InvalidSignatureError, VerifiedBallot
 from dema.streaming.stream import StreamEntry
 from dema.workers.lanes import Lane, Lanes
@@ -8,6 +9,7 @@ from dema.workers.lanes import Lane, Lanes
 logger = logging.getLogger(__name__)
 
 RETRY_DELAY_SECONDS = 1.0
+WAIT_FOR_RUN_SECONDS = 1.0
 
 
 class TallyWorker:
@@ -29,9 +31,16 @@ class TallyWorker:
         self._run_id: int | None = None
 
     async def run(self, stop: asyncio.Event) -> None:
+        waiting = False
         while not stop.is_set():
             try:
                 await self.run_once()
+                waiting = False
+            except ElectionNotSetUpError:
+                if not waiting:
+                    logger.info("waiting for a run to count")
+                    waiting = True
+                await asyncio.sleep(WAIT_FOR_RUN_SECONDS)
             except Exception:
                 logger.exception("batch failed, it will be claimed again")
                 await asyncio.sleep(RETRY_DELAY_SECONDS)

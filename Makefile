@@ -66,6 +66,6 @@ web-check: ## Runs web lint, typecheck, tests and production build
 
 demo: up ## Runs the whole demo (API, workers, director and web) on http://localhost:3000
 	@echo "dema demo: http://localhost:3000 (Ctrl+C stops everything)"
-	@npm --prefix web run dev >/dev/null 2>&1 & web=$$!; \
+	@(cd web && exec ./node_modules/.bin/next dev) >/dev/null 2>&1 & web=$$!; \
 	trap 'kill $$web 2>/dev/null' EXIT; \
 	uv run dema demo
