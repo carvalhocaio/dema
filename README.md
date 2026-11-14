@@ -59,6 +59,33 @@ make hooks
 | `make ci` | Run full verification pipeline locally (`lint`, `format-check`, `typecheck`, `audit`, `test`) |
 | `make clean` | Remove caches and build artifacts |
 | `make rename NAME=...` | Rename package and update configuration |
+| `make demo` | Start Postgres, Redis, the web app and `dema demo`; open http://localhost:3000 |
+
+---
+
+## Demo
+
+`make demo` runs everything at once and starts a count; Ctrl+C stops it all.
+The same pipeline without the web app:
+
+```fish
+make up
+uv run dema demo --sections 5000 --speed 600 --seed 42
+```
+
+`dema demo` migrates the database, synthesizes a catalog when there are no
+sections, starts the director, workers and API with `DEMA_ALLOW_RUNS=true`
+and requests one count. Without `DEMA_SIGNING_KEY` it uses an ephemeral key
+and says so. To count over the full catalog, load it first:
+
+```fish
+uv run dema election setup data/sections-2026.parquet
+uv run dema demo
+```
+
+Running the pieces by hand, `dema director run` turns each "Nova apuração"
+(`POST /runs`, only with `DEMA_ALLOW_RUNS=true`) into a new count and follows
+it to the runoff.
 
 ---
 
